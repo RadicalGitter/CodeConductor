@@ -213,6 +213,8 @@ export class ArtifactStore {
         stderr: path.join(directory, "stderr.log"),
         proposalPatch: path.join(directory, "proposal.patch"),
         repositoryStatus: path.join(directory, "repository-status.txt"),
+        changedPaths: path.join(directory, "changed-paths.json"),
+        verification: path.join(directory, "verification.json"),
       },
     });
     try {

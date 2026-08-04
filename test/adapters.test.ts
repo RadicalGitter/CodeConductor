@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { fileURLToPath } from "node:url";
 
 import { freezeJobRequest } from "../src/contracts/job.js";
 import { CodexAdapter } from "../src/workers/codex.js";
@@ -19,27 +20,30 @@ const contract = freezeJobRequest(
 );
 
 test("Kode defaults to its explicit safe permission mode", () => {
-  const invocation = new KodeAdapter("kode-test").buildInvocation(
+  const invocation = new KodeAdapter(process.execPath).buildInvocation(
     contract,
     "Z:\\workspace",
   );
-  expect(invocation.executable).toBe("kode-test");
+  expect(invocation.executable).toBe(process.execPath);
   expect(invocation.args).toContain("--safe");
   expect(invocation.args).toContain("stream-json");
   expect(invocation.cwd).toBe("Z:\\workspace");
 });
 
 test("Kode can launch a compiled fork through an explicit interpreter and entry", () => {
-  const invocation = new KodeAdapter(
-    "node-test",
-    "Z:\\Kode-CLI\\dist\\index.js",
-  ).buildInvocation(contract, "Z:\\workspace");
-  expect(invocation.executable).toBe("node-test");
-  expect(invocation.args[0]).toBe("Z:\\Kode-CLI\\dist\\index.js");
+  const entry = fileURLToPath(
+    new URL("./fixtures/mutate-worker.ts", import.meta.url),
+  );
+  const invocation = new KodeAdapter(process.execPath, entry).buildInvocation(
+    contract,
+    "Z:\\workspace",
+  );
+  expect(invocation.executable).toBe(process.execPath);
+  expect(invocation.args[0]).toBe(entry);
 });
 
 test("Codex stays in workspace-write and accepts only bounded adapter options", () => {
-  const invocation = new CodexAdapter("codex-test").buildInvocation(
+  const invocation = new CodexAdapter(process.execPath).buildInvocation(
     contract,
     "Z:\\workspace",
   );

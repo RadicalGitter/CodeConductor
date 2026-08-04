@@ -10,6 +10,8 @@
 | `list_worker_adapters`     | Lists configured adapter contracts                                 |
 | `submit_coding_job`        | Freezes a job and starts an isolated attempt without waiting       |
 | `get_attempt`              | Reads a durable attempt manifest                                   |
+| `get_verification`         | Reads typed deterministic verification evidence                    |
+| `read_attempt_artifact`    | Reads a bounded named artifact without arbitrary path access       |
 | `wait_for_attempt`         | Waits only while this process owns the attempt; otherwise reads it |
 | `cancel_attempt`           | Cancels the worker and its subprocess tree                         |
 | `remove_attempt_workspace` | Removes the exact recorded worktree of a terminal attempt          |
@@ -31,6 +33,10 @@ its own worktree.
       stderr.log
       proposal.patch
       repository-status.txt
+      changed-paths.json
+      verification.json
+      setup-*.stdout.log / setup-*.stderr.log
+      acceptance-*.stdout.log / acceptance-*.stderr.log
   workspaces/<attempt-id>/
 ```
 
@@ -42,14 +48,21 @@ attempt.
 
 ## Authority semantics
 
-`completed` is process evidence, not acceptance. The worker output, worktree,
-and patch remain proposals. `reviewDisposition` is a separate field and starts
-at `not-requested`; no current tool can promote it to authoritative repository
-state.
+`completed` is worker-process evidence, not acceptance. `verificationStatus`
+is separate: `eligible` means configured deterministic gates passed;
+`ineligible` preserves a completed proposal that failed scope, checks, or
+proposal stability. The worker output, worktree, and patch remain proposals.
+`reviewDisposition` starts at `not-requested`; no current tool can promote it to
+authoritative repository state.
 
-The first slice parses and freezes path scope, setup commands, and acceptance
-commands so their future meaning is versioned. It deliberately does not claim
-to enforce or execute them yet.
+Path rules are exact files or directory prefixes; glob syntax and traversal are
+rejected. Empty `allowedPaths` means no positive restriction, while forbidden
+and protected rules still apply. Setup commands run before the worker and must
+leave Git-visible state clean. Acceptance commands run only after a successful,
+in-scope worker result and must not alter the captured patch. Commands execute
+without a shell, from real paths inside the worktree, using absolute
+owner-allowlisted executables and owner-allowlisted inherited environment
+names.
 
 ## Restart semantics
 

@@ -63,3 +63,24 @@ entire smoke then passed. No product behavior was changed to hide the mismatch.
 
 This smoke verifies orchestration parity, not model quality, dependency setup,
 path enforcement, acceptance checks, or hostile-code containment.
+
+## Deterministic verification slice
+
+After the parity baseline, the suite expanded to 18 tests. New evidence covers:
+
+- setup commands that pass only when Git-visible repository state remains
+  clean;
+- positive allowed paths plus forbidden and protected path rules;
+- acceptance commands that run only for a successful in-scope proposal;
+- rejection of an otherwise-passing acceptance command when it mutates the
+  captured proposal;
+- owner-side absolute executable and environment-name allowlists;
+- exclusion of arbitrary parent secrets from worker/check subprocesses;
+- rejection of Windows batch shims in the shell-free executor;
+- typed verification artifacts and bounded named-artifact reads suitable for a
+  remote MCP client.
+
+The negative cases remain first-class: protected-path proposals finish as
+worker outputs but are marked ineligible; dirty setup stops the worker;
+mutating checks are ineligible even with exit code zero; unconfigured commands
+are policy-denied rather than silently executed.

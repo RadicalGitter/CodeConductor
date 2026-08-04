@@ -31,7 +31,9 @@ test("publishes the provider-neutral MCP tool contract", async () => {
     expect(tools.tools.map((tool) => tool.name).sort()).toEqual([
       "cancel_attempt",
       "get_attempt",
+      "get_verification",
       "list_worker_adapters",
+      "read_attempt_artifact",
       "remove_attempt_workspace",
       "submit_coding_job",
       "wait_for_attempt",

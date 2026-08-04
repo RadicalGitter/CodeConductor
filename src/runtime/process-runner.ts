@@ -2,6 +2,8 @@ import { spawn } from "node:child_process";
 import { mkdir, open } from "node:fs/promises";
 import path from "node:path";
 
+import { selectParentEnvironment } from "./environment.js";
+
 export interface ProcessInvocation {
   executable: string;
   args: string[];
@@ -53,7 +55,7 @@ export async function runProcess(
   try {
     const child = spawn(invocation.executable, invocation.args, {
       cwd: invocation.cwd,
-      env: { ...process.env, ...invocation.env },
+      env: { ...selectParentEnvironment(), ...invocation.env },
       shell: false,
       windowsHide: true,
       detached: process.platform !== "win32",

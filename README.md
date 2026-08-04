@@ -25,10 +25,11 @@ the owner of orchestration.
 
 ## Current status
 
-The independent bootstrap and first durable-worker slice are implemented.
-Conductor currently provides Kode and Codex adapters, asynchronous submission,
-polling, process-tree cancellation, exact-revision Git worktrees, atomic
-job/attempt manifests, proposal patches, and a stdio MCP server.
+The independent bootstrap, durable-worker slice, and deterministic verification
+slice are implemented. Conductor currently provides Kode and Codex adapters,
+asynchronous submission, polling, process-tree cancellation, exact-revision Git
+worktrees, atomic job/attempt manifests, proposal patches, setup evidence,
+path-scope enforcement, acceptance-command evidence, and a stdio MCP server.
 
 ```powershell
 bun install
@@ -45,6 +46,13 @@ To bind directly to a compiled Kode fork without an installed launcher, set
 `CONDUCTOR_KODE_NODE_BIN` to the Node executable. The entry is passed as an
 argument; Conductor never imports Kode packages.
 
+Worker subprocesses inherit a minimal operating-system environment. Add
+explicit names with `CONDUCTOR_WORKER_ENV_ALLOWLIST`. Setup and acceptance
+commands require absolute executable paths that also appear in the owner-side
+`CONDUCTOR_COMMAND_ALLOWLIST`; their named environment dependencies must appear
+in `CONDUCTOR_COMMAND_ENV_ALLOWLIST`. Lists are comma-separated. Command values
+and secret values are never accepted into the frozen job contract.
+
 Kode uses `--safe` in this host-worktree executor. Permission bypass is not a
 job option or environment switch; it belongs only in a future stronger
 external/VM executor where the host boundary remains intact.
@@ -57,11 +65,10 @@ See [the architecture](docs/architecture.md),
 ## Important current boundary
 
 Worktrees isolate proposals from the primary checkout; they do not isolate a
-host from hostile generated code. Scope declarations, setup commands, and
-acceptance commands are preserved in the frozen contract but are not yet
-enforced or executed. Until the next slice lands, completed means only that the
-worker process and proposal capture completed—not that the proposal was
-accepted.
+host from hostile generated code. `completed` means that the worker process
+completed, while `verificationStatus=eligible` means deterministic preparation,
+scope, and acceptance gates also passed. Neither status semantically accepts or
+merges the proposal.
 
 ## Licensing
 

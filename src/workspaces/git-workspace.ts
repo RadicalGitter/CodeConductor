@@ -2,6 +2,8 @@ import { spawn } from "node:child_process";
 import { mkdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
+import { selectParentEnvironment } from "../runtime/environment.js";
+
 export interface GitWorkspace {
   path: string;
   repositoryRoot: string;
@@ -102,6 +104,7 @@ async function git(cwd: string, args: string[]): Promise<string> {
   const child = spawn("git", ["-C", cwd, ...args], {
     shell: false,
     windowsHide: true,
+    env: selectParentEnvironment(),
     stdio: ["ignore", "pipe", "pipe"],
   });
   let stdout = "";

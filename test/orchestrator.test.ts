@@ -109,6 +109,7 @@ class FixtureAdapter implements WorkerAdapter {
     mutationMode: "worktree" as const,
     outputFormat: "jsonl" as const,
     safetyMode: "test-fixture",
+    available: true,
   };
 
   buildInvocation(_contract: JobContract, workspacePath: string) {

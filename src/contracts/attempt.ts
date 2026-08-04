@@ -4,6 +4,7 @@ export const attemptStatusSchema = z.enum([
   "reserved",
   "preparing",
   "running",
+  "verifying",
   "completed",
   "failed",
   "needs-input",
@@ -16,6 +17,7 @@ export const failureKindSchema = z.enum([
   "invalid-job",
   "adapter-unavailable",
   "workspace-failed",
+  "setup-failed",
   "spawn-failed",
   "worker-exit",
   "proposal-capture-failed",
@@ -66,6 +68,8 @@ export const attemptManifestSchema = z.object({
     stderr: z.string().min(1),
     proposalPatch: z.string().min(1),
     repositoryStatus: z.string().min(1),
+    changedPaths: z.string().min(1),
+    verification: z.string().min(1),
   }),
   failure: z
     .object({
@@ -73,9 +77,13 @@ export const attemptManifestSchema = z.object({
       message: z.string().min(1),
     })
     .optional(),
+  cleanupError: z.string().min(1).optional(),
   reviewDisposition: z
     .enum(["not-requested", "pending", "accepted", "rejected", "superseded"])
     .default("not-requested"),
+  verificationStatus: z
+    .enum(["not-run", "running", "eligible", "ineligible"])
+    .default("not-run"),
 });
 
 export type AttemptManifest = z.infer<typeof attemptManifestSchema>;
@@ -98,5 +106,6 @@ export function createReservedAttempt(input: {
     createdAt: (input.createdAt ?? new Date()).toISOString(),
     artifacts: input.artifacts,
     reviewDisposition: "not-requested",
+    verificationStatus: "not-run",
   });
 }

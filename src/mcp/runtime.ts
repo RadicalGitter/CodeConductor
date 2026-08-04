@@ -5,6 +5,7 @@ import { Conductor } from "../orchestrator/conductor.js";
 import { ArtifactStore } from "../storage/artifact-store.js";
 import { createDefaultWorkerRegistry } from "../workers/defaults.js";
 import { GitWorkspaceManager } from "../workspaces/git-workspace.js";
+import { ExecutionPolicy } from "../verification/command-executor.js";
 
 export function createConductorFromEnvironment(): Conductor {
   const dataRoot = path.resolve(
@@ -15,5 +16,6 @@ export function createConductorFromEnvironment(): Conductor {
     store,
     new GitWorkspaceManager(store.workspaceRoot()),
     createDefaultWorkerRegistry(),
+    ExecutionPolicy.fromEnvironment(),
   );
 }

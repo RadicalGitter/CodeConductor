@@ -30,6 +30,12 @@ check artifacts.
 **Exit:** a worker cannot receive an accepted proposal after leaving scope,
 skipping required checks, or modifying the verifier.
 
+**State:** core complete. Setup commands, clean-state enforcement, exact/prefix
+path policy, protected paths, changed-path artifacts, acceptance commands,
+proposal-stability checks, bounded remote evidence reads, and environment/
+executable allowlists are characterized. Named cached dependency strategies
+remain an optimization rather than an authority prerequisite.
+
 ## Slice 3 — contract-source compiler
 
 Project plugins discover structured source comments, bind them to symbols,

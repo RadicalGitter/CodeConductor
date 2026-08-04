@@ -44,8 +44,9 @@ status.
 job:     proposed -> validated -> active -> completed
                               \-> cancelled
 
-attempt: reserved -> preparing -> running -> completed | failed
-                                          \-> needs-input | cancelled
+attempt: reserved -> preparing -> running -> verifying -> completed
+                              \-> failed      \-> cancelled
+                              \-> needs-input
 
 proposal: completed -> review-pending -> accepted | rejected | superseded
 ```
@@ -55,15 +56,18 @@ new attempt under the same frozen job.
 
 ## Execution boundary
 
-The first slice provides worktree isolation and conservative subprocess modes.
-That protects the primary checkout but is not a hostile-code sandbox. Later VM
-execution will implement the stronger boundary required for autonomous
-generated-code experiments.
+The host executor provides worktree isolation and conservative subprocess
+modes. It protects the primary checkout but is not a hostile-code sandbox.
+Later VM execution will implement the stronger boundary required for
+autonomous generated-code experiments.
 
-Allowed and forbidden paths are checked independently of worker prose. Setup
-and acceptance commands use typed executable-plus-argument arrays, never shell
-strings. Network, secrets, resource limits, and host mounts belong to runtime
-policy or the stronger executor, not `AGENTS.md`.
+Allowed, forbidden, and protected paths are checked independently of worker
+prose. Setup and acceptance commands use typed executable-plus-argument arrays,
+never shell strings. They require owner-allowlisted absolute executables, remain
+inside the worktree by real path, receive only allowlisted environment names,
+and produce separate logs. Setup must leave repository state clean; acceptance
+must leave the captured proposal unchanged. Network, stronger secret isolation,
+resource limits, and host mounts belong to the VM executor, not `AGENTS.md`.
 
 ## Extension boundary
 

@@ -8,6 +8,7 @@ export interface WorkerAdapterDescription {
   mutationMode: "worktree";
   outputFormat: "jsonl" | "text";
   safetyMode: string;
+  available: boolean;
 }
 
 export interface WorkerAdapter {

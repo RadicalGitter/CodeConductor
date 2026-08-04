@@ -1,18 +1,28 @@
 import type { JobContract } from "../contracts/job.js";
 import type { ProcessInvocation } from "../runtime/process-runner.js";
+import { selectRequestedEnvironment } from "../runtime/environment.js";
+import { resolveExecutablePath } from "../runtime/executable.js";
 import { buildWorkerPrompt, type WorkerAdapter } from "./adapter.js";
 
 export class CodexAdapter implements WorkerAdapter {
   readonly description;
+  private readonly environmentKeys: readonly string[];
+  private readonly executable?: string;
 
-  constructor(executable = process.env.CONDUCTOR_CODEX_BIN ?? "codex") {
+  constructor(
+    executable = process.env.CONDUCTOR_CODEX_BIN ?? "codex",
+    environmentKeys: readonly string[] = [],
+  ) {
+    this.environmentKeys = environmentKeys;
+    this.executable = resolveExecutablePath(executable);
     this.description = {
       id: "codex",
       label: "Codex CLI",
-      executable,
+      executable: this.executable ?? executable,
       mutationMode: "worktree" as const,
       outputFormat: "jsonl" as const,
       safetyMode: "codex-workspace-write",
+      available: this.executable !== undefined,
     };
   }
 
@@ -20,6 +30,11 @@ export class CodexAdapter implements WorkerAdapter {
     contract: JobContract,
     workspacePath: string,
   ): ProcessInvocation {
+    if (!this.executable) {
+      throw new Error(
+        `Codex executable is unavailable or requires a shell shim: ${this.description.executable}`,
+      );
+    }
     const args = [
       "exec",
       "--json",
@@ -36,9 +51,10 @@ export class CodexAdapter implements WorkerAdapter {
     args.push(buildWorkerPrompt(contract));
 
     return {
-      executable: this.description.executable,
+      executable: this.executable,
       args,
       cwd: workspacePath,
+      env: selectRequestedEnvironment(this.environmentKeys),
     };
   }
 }

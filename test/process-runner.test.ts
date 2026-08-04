@@ -33,6 +33,53 @@ test("captures stdout and stderr without a shell", async () => {
   }
 });
 
+test("does not inherit arbitrary parent secrets unless explicitly injected", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "conductor-environment-"));
+  const name = "CONDUCTOR_TEST_SECRET_CANARY";
+  const previous = process.env[name];
+  process.env[name] = "must-not-leak";
+  try {
+    const hidden = await runProcess(
+      {
+        executable: process.execPath,
+        args: ["-e", `console.log(process.env.${name} ?? "missing")`],
+        cwd: root,
+      },
+      {
+        stdoutPath: path.join(root, "hidden.stdout.log"),
+        stderrPath: path.join(root, "hidden.stderr.log"),
+        timeoutMs: 5_000,
+      },
+    );
+    expect(hidden.exitCode).toBe(0);
+    expect(
+      await readFile(path.join(root, "hidden.stdout.log"), "utf8"),
+    ).toContain("missing");
+
+    const explicit = await runProcess(
+      {
+        executable: process.execPath,
+        args: ["-e", `console.log(process.env.${name} ?? "missing")`],
+        cwd: root,
+        env: { [name]: "explicit-value" },
+      },
+      {
+        stdoutPath: path.join(root, "explicit.stdout.log"),
+        stderrPath: path.join(root, "explicit.stderr.log"),
+        timeoutMs: 5_000,
+      },
+    );
+    expect(explicit.exitCode).toBe(0);
+    expect(
+      await readFile(path.join(root, "explicit.stdout.log"), "utf8"),
+    ).toContain("explicit-value");
+  } finally {
+    if (previous === undefined) delete process.env[name];
+    else process.env[name] = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("cancellation terminates descendants, not only the direct worker", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "conductor-tree-"));
   const canary = path.join(root, "survived.txt");

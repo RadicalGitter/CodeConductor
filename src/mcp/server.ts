@@ -51,6 +51,47 @@ export function createMcpServer(conductor: Conductor): McpServer {
   );
 
   server.registerTool(
+    "get_verification",
+    {
+      title: "Get deterministic verification",
+      description:
+        "Read the typed setup, path-scope, acceptance-command, proposal-stability, and review-eligibility evidence for one attempt.",
+      inputSchema: { attemptId: z.string().min(1) },
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async ({ attemptId }) =>
+      toolResult(await conductor.getVerification(attemptId)),
+  );
+
+  server.registerTool(
+    "read_attempt_artifact",
+    {
+      title: "Read bounded attempt artifact",
+      description:
+        "Read at most one million bytes from one named artifact recorded in an attempt manifest. Arbitrary filesystem paths are not accepted.",
+      inputSchema: {
+        attemptId: z.string().min(1),
+        name: z.enum([
+          "job",
+          "manifest",
+          "stdout",
+          "stderr",
+          "proposalPatch",
+          "repositoryStatus",
+          "changedPaths",
+          "verification",
+        ]),
+        maxBytes: z.number().int().min(1).max(1_000_000).default(200_000),
+      },
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async ({ attemptId, name, maxBytes }) =>
+      toolResult(
+        await conductor.readAttemptArtifact(attemptId, name, maxBytes),
+      ),
+  );
+
+  server.registerTool(
     "wait_for_attempt",
     {
       title: "Wait for coding attempt",
