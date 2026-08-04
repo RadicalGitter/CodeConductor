@@ -11,6 +11,7 @@ export * from "./runtime/process-runner.js";
 export * from "./runtime/environment.js";
 export * from "./runtime/executable.js";
 export * from "./queue/dispatcher.js";
+export * from "./queue/completion.js";
 export * from "./queue/queue-store.js";
 export * from "./reconcile/runtime-reconciler.js";
 export * from "./sources/command-profiles.js";

@@ -8,6 +8,7 @@ import {
 import type { RunJobResult } from "../orchestrator/conductor.js";
 import { Conductor, ProposalLineageError } from "../orchestrator/conductor.js";
 import { QueueStore } from "./queue-store.js";
+import { projectQueueCompletion } from "./completion.js";
 
 export interface DispatcherOptions {
   maxConcurrent?: number;
@@ -394,51 +395,10 @@ export class DurableDispatcher {
     item: QueueItem,
     result: RunJobResult,
   ): Promise<void> {
-    const cleanupSafe = ["not-required", "proven"].includes(
-      result.cleanupStatus,
+    await this.queue.update(
+      await this.queue.read(item.jobId),
+      projectQueueCompletion(result),
     );
-    const eligible =
-      result.status === "completed" &&
-      result.verificationStatus === "eligible" &&
-      cleanupSafe;
-    const needsInput =
-      !cleanupSafe ||
-      result.status === "needs-input" ||
-      (result.status === "completed" && !eligible);
-    const queueStatus = !cleanupSafe
-      ? "needs-input"
-      : result.status === "cancelled"
-        ? "cancelled"
-        : eligible
-          ? "completed"
-          : needsInput
-            ? "needs-input"
-            : "failed";
-    await this.queue.update(await this.queue.read(item.jobId), {
-      status: queueStatus,
-      attemptId: result.attemptId,
-      completion: {
-        attemptId: result.attemptId,
-        attemptStatus: result.status,
-        verificationStatus: result.verificationStatus,
-        cleanupStatus: result.cleanupStatus,
-        finishedAt: new Date().toISOString(),
-        artifacts: {
-          manifest: result.artifacts.manifest,
-          proposalPatch: result.artifacts.proposalPatch,
-          changedPaths: result.artifacts.changedPaths,
-          verification: result.artifacts.verification,
-          cleanup: result.artifacts.cleanup,
-        },
-      },
-      message:
-        result.failure?.message ??
-        (!cleanupSafe
-          ? `Attempt cleanup is ${result.cleanupStatus}; retry and evidence removal are prohibited`
-          : needsInput
-            ? "Deterministic verification marked proposal ineligible"
-            : undefined),
-    });
   }
 
   private async recoverInterruptedItems(): Promise<void> {
