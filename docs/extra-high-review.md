@@ -31,18 +31,26 @@ outcome can be called resolved for automatic retry.
 
 ## Lease stealing and filesystem semantics
 
-**Outcome: local lease implementation exists; unattended closure reopened.**
-Lease records carry a monotonic generation, random instance identity, hostname,
-process identity, and timestamps. Renewal and release require the exact
-generation. Release first atomically renames the exact lock, so a stale owner
-cannot delete its successor. Expiration permits recovery only on the same host
-after the owner PID is gone; a live process keeps ownership through suspend.
-UNC roots are rejected.
+**Outcome: single-host lease repair resolved by `243b0ec`; broader recovery
+convergence remains open.** Lease records carry a monotonic generation, random
+instance identity, hostname, process identity, and timestamps. Renewal and
+release require the exact generation. Release first atomically renames the
+exact lock, so a stale owner cannot delete its successor. A valid dead-owner
+lease is recovered only on the same host and is preserved before a successor
+is created; a live process keeps ownership through suspend. Future expiry does
+not defeat direct same-host process-absence evidence after clock rollback.
 
-Unmet exit: missing or malformed lease evidence can wedge dispatch, and some
-conservative quarantine states have no public reconciliation path. Repair,
-explanation, and crash-boundary tests must pass before the local lease is an
-unattended-readiness claim.
+Missing and malformed records now receive typed dry-run classifications after
+an initialization grace period. Repair output is only a proposal. Mutation
+requires a separate attributable owner approval and the exact unchanged
+evidence token, then moves the raw directory to durable quarantine rather than
+deleting it. A recoverable reconciliation mutex closes the repair-owner crash
+window. The malformed, missing, stale, suspend, clock, remote-host, concurrent
+owner, and crashed-reconciler tests pass on the implementing revision.
+
+Unmet exit: the public inspector diagnoses queue/attempt mismatch states, but
+most do not yet have typed mutation actions or exhaustive convergence evidence.
+That is HARD-006 rather than a remaining lease-repair defect.
 
 Residual boundary: SMB, mapped network drives, shared Tailscale filesystems,
 clock-independent distributed fencing, and multi-host dispatch remain

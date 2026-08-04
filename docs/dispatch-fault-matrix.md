@@ -2,8 +2,8 @@
 
 - Implementing revision: `a84e8fc`
 - Scope: queue intent through pre-worker launch
-- Result: HARD-001 and HARD-002 closed; later lifecycle and lease-repair items
-  remain open
+- Result: HARD-001 and HARD-002 closed at `a84e8fc`; HARD-005 lease repair
+  closed separately at `243b0ec`; later lifecycle items remain open
 
 The test harness terminates a fresh dispatcher process at each named boundary,
 waits for its dead-owner lease to expire, and starts a new dispatcher over the
@@ -30,8 +30,30 @@ Additional evidence:
 - Active cancellation remains `cancelling` until terminal attempt evidence is
   written.
 
-The matrix does not claim closure for termination after workspace creation,
-guardian start, worker exit, verification, terminal evidence, review creation,
-external-resource operations, or malformed lease records. Those boundaries
-remain tracked by HARD-003 through HARD-008 in the
-[hardening register](hardening-register.md).
+The pre-launch matrix does not claim closure for termination after workspace
+creation, guardian start, worker exit, verification, terminal evidence, review
+creation, or external-resource operations. Malformed lease records are covered
+by the later matrix below. The remaining boundaries stay tracked by HARD-003
+through HARD-008 in the [hardening register](hardening-register.md).
+
+## Lease-repair fault matrix
+
+- Implementing revision: `243b0ec`
+- Result: HARD-005 closed; HARD-006 remains open
+
+| Observed lease evidence                             | Authority                  | Disposition                                                                |
+| --------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------- |
+| No lock directory                                   | deterministic              | create normally                                                            |
+| New lock directory without `lease.json`             | deterministic              | wait through one initialization grace interval                             |
+| Old directory without `lease.json`                  | owner                      | propose exact-token quarantine; preserve directory after separate approval |
+| Old malformed `lease.json`                          | owner                      | propose exact-token quarantine; preserve raw bytes after separate approval |
+| Valid live same-host lease, even expired            | existing owner             | wait; suspend cannot authorize theft                                       |
+| Valid remote-host lease                             | remote owner               | wait; local PID state has no authority                                     |
+| Valid dead same-host lease, including future expiry | deterministic              | preserve evidence, increment generation, create one successor              |
+| Two simultaneous recoverers or owner actions        | filesystem election        | exactly one preserves the source; stale observation loses                  |
+| Reconciler process dies while holding its mutex     | deterministic on same host | preserve the dead mutex record and resume repair                           |
+
+The standalone dry-run starts no dispatcher, so damaged lease evidence cannot
+hide its own repair surface. The full 56-test gate passed on the implementing
+revision. Queue/attempt mismatches are now visible but are not included in this
+closure claim.

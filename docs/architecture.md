@@ -85,8 +85,14 @@ revision comparison and cannot regress terminal state.
 The local dispatcher lease is generation-fenced. Expiration alone never
 authorizes stealing from a live same-host process, so machine suspend cannot
 create a second owner. Release removes only the exact owner/instance/generation
-that acquired the lease. UNC queue roots are rejected; this is not a
-distributed-filesystem lease.
+that acquired the lease. A dead same-host owner is recovered from direct
+process-absence evidence even when a clock change left a future expiry. The
+old directory is moved to content-identified evidence before a successor is
+created. Missing or malformed records require a separate attributable owner
+approval after the initialization grace period; they are quarantined rather
+than deleted. Reconciliation itself uses a recoverable local mutex so its own
+owner crash cannot become a new permanent lock. UNC queue roots are rejected;
+this is not a distributed-filesystem lease.
 
 ## Execution boundary
 

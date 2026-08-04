@@ -3,9 +3,11 @@
 > **Readiness correction:** this is the intended operating procedure, not the
 > current readiness claim. The Ultra review of commit `5bf3cf2` reopened the
 > unattended gates. Attempt fencing and pre-launch dispatch recovery were
-> closed by `a84e8fc`; process-tree closure, lease repair, evidence integrity,
-> and resource budgets remain open. Use attended trusted-worker trials only
-> until the hardening exits in `vesserin-backend-generation-plan.md` pass.
+> closed by `a84e8fc`, and malformed/missing lease recovery was closed by
+> `243b0ec`. Process-tree closure, complete queue/attempt convergence, evidence
+> integrity, and resource budgets remain open. Use attended trusted-worker
+> trials only until the hardening exits in
+> `vesserin-backend-generation-plan.md` pass.
 
 This run mode watches committed source contracts, queues each newly observed
 revision once, runs bounded workers in isolated worktrees, applies deterministic
@@ -45,10 +47,11 @@ It never merges into the project checkout.
    bun run check
    ```
 
-The doctor fails closed when Kode is unavailable, its dedicated config is not
-explicitly inherited, thinking/high effort is absent, the configured model is
-not the model currently served, the runtime data directory cannot initialize,
-or no owner-side command profile is available. It never prints API keys.
+The doctor fails closed when runtime reconciliation reports a blocked issue,
+Kode is unavailable, its dedicated config is not explicitly inherited,
+thinking/high effort is absent, the configured model is not the model currently
+served, the runtime data directory cannot initialize, or no owner-side command
+profile is available. It never prints API keys.
 
 ## External generated-code verifier
 
@@ -86,6 +89,54 @@ Use `register_contract_watch` once per repository. Use
 see the exact observed revision or the last scan error. Queue operations are
 available through `list_queue`, `get_queue_item`, `cancel_queued_job`, and
 `retry_queued_job`.
+
+## Inspect and repair a lease
+
+Run the standalone dry-run before manual recovery or whenever MCP startup is
+blocked by lease evidence:
+
+```powershell
+bun run reconcile --dry-run
+```
+
+It starts neither the dispatcher nor a worker. The report classifies the lease,
+lists queue/attempt relationship issues, and may include an
+`availableActions` proposal. A proposal is deliberately not executable
+approval. To authorize quarantine, copy the exact proposal into a separate
+JSON file and add an attributable approval:
+
+```json
+{
+  "schema": "conductor.reconciliation-action/v1",
+  "proposal": {
+    "schema": "conductor.reconciliation-action-proposal/v1",
+    "kind": "quarantine-unreadable-dispatcher-lease",
+    "observedState": "corrupt",
+    "evidenceToken": "copy the exact token from dry-run",
+    "requiredAuthority": "owner",
+    "description": "copy the exact description from dry-run"
+  },
+  "approval": {
+    "approvedBy": "owner identity",
+    "approvedAt": "2026-08-04T18:30:00.000Z",
+    "reason": "Verified that no dispatcher is initializing or owns this lease"
+  }
+}
+```
+
+Then apply only that file:
+
+```powershell
+bun run reconcile --apply .\approved-action.json
+```
+
+The evidence token is rechecked immediately before mutation. The original lock
+directory and raw bytes move under `queue/lease-evidence`; nothing is silently
+deleted. A same-host dead valid owner is recovered automatically and preserved,
+regardless of wall-clock expiry. A live local owner is never stolen after
+suspend, and a remote-host lease always waits for owner judgment. Queue/attempt
+issues are diagnostic in this revision: do not hand-edit state or infer that
+the lease action repairs them.
 
 `submit_coding_job` is now a compatibility queue submission, not an alternate
 launcher. Its response wraps the current queue `item` and
@@ -139,6 +190,9 @@ reconciliation campaign passes.
 
 The generation-fenced queue lease is intentionally single-machine. Expired
 heartbeats are not stolen from live local processes, which makes suspend safe.
+Valid dead-owner leases are preserved and recovered from same-host process
+absence. Old missing or malformed records require the explicit approval flow
+above.
 UNC runtime roots are rejected. Do not place the runtime data directory on SMB,
 a mapped network drive, or treat Tailscale access as distributed queue
 ownership. Run the dispatcher on the machine that owns its local data root and

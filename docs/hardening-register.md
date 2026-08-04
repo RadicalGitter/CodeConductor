@@ -84,7 +84,7 @@ update on the exact implementing revision.
 ## HARD-005 — malformed or missing lease recovery
 
 - Severity: P0
-- State: confirmed; open
+- State: closed by `243b0ec`
 - Failure: missing or malformed lease evidence can wedge dispatch indefinitely.
 - Required change: classify corrupt lease states, preserve their evidence, and
   provide dry-run repair or actionable quarantine without unsafe PID authority.
@@ -93,11 +93,24 @@ update on the exact implementing revision.
   authority needed.
 - Closure updates: runtime contract, Extra High register, doctor/reconcile, and
   lease tests.
+- Evidence: versioned inspection distinguishes absent, initializing, live
+  local, expired-but-live local, remote, dead local, incomplete, and corrupt
+  states. Same-host dead owners recover even with future expiry and preserve
+  the old lease under its SHA-256 evidence token. Missing or malformed records
+  become eligible for quarantine only after the initialization grace period;
+  dry-run returns a proposal while mutation requires a separate named,
+  timestamped owner approval and an unchanged token. The standalone command
+  remains available when dispatcher startup cannot succeed. Tests cover
+  malformed JSON, missing records, stale directories, a live expired owner
+  after suspend, a dead owner after clock rollback, remote-host refusal,
+  simultaneous recoverers, simultaneous owner actions, stale action tokens,
+  and a reconciliation-owner crash. The complete 56-test repository gate
+  passed on the implementing revision.
 
 ## HARD-006 — public recovery convergence
 
 - Severity: P0
-- State: confirmed; open
+- State: partially implemented by `243b0ec`; open
 - Failure: some terminal-queue/nonterminal-attempt and live-or-missing identity
   quarantines have no complete public recovery path.
 - Required change: versioned legal transition table and `reconcile --dry-run`
@@ -106,6 +119,13 @@ update on the exact implementing revision.
   durable terminal state or an actionable quarantine after restart.
 - Closure updates: CLI/MCP schemas, operations, and model-based transition
   tests.
+- Current boundary: `reconcile_runtime` and `bun run reconcile --dry-run`
+  publicly report unreadable stores, missing relationships, dispatch identity
+  mismatches, terminal/nonterminal disagreement, and unreferenced nonterminal
+  attempts. Live-owner reservation windows are warnings rather than false
+  corruption claims. The only mutating action is evidence-bound lease
+  quarantine; queue/attempt transitions still have no public repair action or
+  exhaustive convergence proof, so this item remains open.
 
 ## HARD-007 — complete review evidence binding
 

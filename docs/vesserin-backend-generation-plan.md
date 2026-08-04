@@ -262,9 +262,11 @@ Progress on `a84e8fc`: the revision-fenced transition engine,
 `dispatchOperationId`, scheduler-owned MCP submission, `dispatching` and
 `cancelling`, complete-attempt startup scan, and pre-launch termination matrix
 are implemented. HARD-001 and HARD-002 are closed. Phase 1 remains open for
-immutable terminal/cleanup records, malformed lease and staging repair,
-direct-queue graph validation, the public reconcile surface, and exhaustive
-state-combination convergence.
+immutable terminal/cleanup records, staging repair, direct-queue graph
+validation, and exhaustive state-combination convergence. Revision `243b0ec`
+closes HARD-005: malformed/missing leases now have typed, evidence-preserving
+repair, and dry-run reconciliation is public through CLI and MCP. Queue/attempt
+repair actions remain deliberately absent, so HARD-006 is still open.
 
 ### Phase 2 — process, Git, resource, and cleanup closure
 
@@ -829,7 +831,8 @@ Keep each item independently testable and commit it separately:
 2. transition engine and scheduler-only launch — completed by `a84e8fc`;
 3. dispatch journal, lease repair, and startup reconciliation — pre-launch
    journal and attempt scan completed by `a84e8fc`; lease repair and public
-   reconciliation remain open;
+   dry-run inspection completed by `243b0ec`; exhaustive public state
+   convergence remains open;
 4. process-tree ownership and cleanup proof;
 5. resource/Git/artifact budgets and garbage collection;
 6. typed worker outcome and sealed evidence;

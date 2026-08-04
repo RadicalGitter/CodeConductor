@@ -6,28 +6,30 @@
 
 ## MCP surface
 
-| Tool                       | Effect                                                             |
-| -------------------------- | ------------------------------------------------------------------ |
-| `list_worker_adapters`     | Lists configured adapter contracts                                 |
-| `submit_coding_job`        | Freezes a job and hands it to the owned dispatcher without waiting |
-| `enqueue_coding_job`       | Freezes a job and durably queues it with dependency metadata       |
-| `list_queue`               | Reads compact queue and completion records                         |
-| `get_queue_item`           | Reads one queue record                                             |
-| `cancel_queued_job`        | Cancels waiting work or its active process tree                    |
-| `retry_queued_job`         | Requeues terminal work as a new evidence-preserving attempt        |
-| `scan_contract_sources`    | Compiles exact-revision comment contracts without mutation         |
-| `enqueue_contract_sources` | Persists and queues a validated source dependency graph            |
-| `register_contract_watch`  | Persists an automatic moving-ref scan policy                       |
-| `list_contract_watches`    | Reads watch revisions, run ids, and errors                         |
-| `set_contract_watch`       | Enables or disables a persisted watch                              |
-| `poll_contract_watches`    | Runs one immediate watch cycle                                     |
-| `get_attempt`              | Reads a durable attempt manifest                                   |
-| `get_verification`         | Reads typed deterministic verification evidence                    |
-| `get_review_bundle`        | Reads a bounded review packet; only its patch is revalidated today |
-| `read_attempt_artifact`    | Reads a bounded named artifact without arbitrary path access       |
-| `wait_for_attempt`         | Waits only while this process owns the attempt; otherwise reads it |
-| `cancel_attempt`           | Cancels the worker and its subprocess tree                         |
-| `remove_attempt_workspace` | Removes the exact recorded worktree of a terminal attempt          |
+| Tool                          | Effect                                                             |
+| ----------------------------- | ------------------------------------------------------------------ |
+| `reconcile_runtime`           | Dry-run lease and queue/attempt relationship inspection            |
+| `apply_reconciliation_action` | Applies one evidence-bound, owner-approved lease quarantine        |
+| `list_worker_adapters`        | Lists configured adapter contracts                                 |
+| `submit_coding_job`           | Freezes a job and hands it to the owned dispatcher without waiting |
+| `enqueue_coding_job`          | Freezes a job and durably queues it with dependency metadata       |
+| `list_queue`                  | Reads compact queue and completion records                         |
+| `get_queue_item`              | Reads one queue record                                             |
+| `cancel_queued_job`           | Cancels waiting work or its active process tree                    |
+| `retry_queued_job`            | Requeues terminal work as a new evidence-preserving attempt        |
+| `scan_contract_sources`       | Compiles exact-revision comment contracts without mutation         |
+| `enqueue_contract_sources`    | Persists and queues a validated source dependency graph            |
+| `register_contract_watch`     | Persists an automatic moving-ref scan policy                       |
+| `list_contract_watches`       | Reads watch revisions, run ids, and errors                         |
+| `set_contract_watch`          | Enables or disables a persisted watch                              |
+| `poll_contract_watches`       | Runs one immediate watch cycle                                     |
+| `get_attempt`                 | Reads a durable attempt manifest                                   |
+| `get_verification`            | Reads typed deterministic verification evidence                    |
+| `get_review_bundle`           | Reads a bounded review packet; only its patch is revalidated today |
+| `read_attempt_artifact`       | Reads a bounded named artifact without arbitrary path access       |
+| `wait_for_attempt`            | Waits only while this process owns the attempt; otherwise reads it |
+| `cancel_attempt`              | Cancels the worker and its subprocess tree                         |
+| `remove_attempt_workspace`    | Removes the exact recorded worktree of a terminal attempt          |
 
 Submission is intentionally non-blocking. Both submission tools enter the same
 durable queue; `submit_coding_job` is the compatibility form with default
@@ -60,6 +62,8 @@ may execute concurrently; each mutating attempt has its own worktree.
     items/<job-id>/transitions/<revision>/queue.json
     dispatcher.lock/lease.json
     lease-generation.json
+    lease-evidence/<evidence-token>/
+    lease-evidence/reconciliation-locks/<instance-id>/
   source-runs/<run-id>/manifest.json
   source-watches/<watch-id>/watch.json
 ```
@@ -127,11 +131,31 @@ Completed manifests, queue items, and artifacts survive process restart. Queue
 state uses `queued -> dispatching -> running`, while attempt state uses
 `reserved -> claimed -> preparing -> running`. Active cancellation remains
 `cancelling` until terminal attempt evidence exists. One generation-fenced
-heartbeat lease owns dispatch. A lease can be recovered
-automatically only after expiration, on the same host, when its recorded owner
-process is no longer alive. A live process remains authoritative even after
-machine suspend makes the heartbeat old. Renew and release require the exact
-owner, instance, and generation; an old owner cannot remove a newer lock.
+heartbeat lease owns dispatch. A valid lease can be recovered automatically on
+the same host when its recorded owner process is no longer alive; direct
+absence evidence wins even when a backward clock change left a future expiry.
+A live process remains authoritative even after machine suspend makes the
+heartbeat old. Remote-host leases are never interpreted from local PID state.
+Renew and release require the exact owner, instance, and generation; an old
+owner cannot remove a newer lock.
+
+Lease inspection classifies absence, initialization, active local ownership,
+expired-but-live local ownership, remote ownership, recoverable dead ownership,
+incomplete records, and corrupt records. Automatic dead-owner recovery first
+moves the exact content-identified lease directory under `lease-evidence`.
+Incomplete or corrupt records outliving one lease interval produce an action
+proposal, not authorization. `apply_reconciliation_action` requires that exact
+proposal plus an explicit approver, approval time, and reason; it rechecks the
+evidence token and preserves the original directory. Concurrent repair is
+serialized by a staged, recoverable local reconciliation mutex whose dead-owner
+record is also retained.
+
+`reconcile_runtime` and `bun run reconcile --dry-run` do not mutate state. They
+also report unreadable stores and queue/attempt relationship mismatches. The
+standalone command deliberately constructs no dispatcher, so it remains usable
+when a damaged lease prevents MCP startup. Only lease quarantine has a public
+mutation action in this revision; queue/attempt mismatch repair remains part of
+HARD-006 and there is no force-complete command.
 
 Startup reconstructs a missing queue-to-attempt link from the operation ID,
 returns intent without an attempt safely to `queued`, cancels unlaunched orphan
@@ -143,11 +167,11 @@ external-resource evidence.
 Every external command runs below a Node guardian whose identity is persisted
 before the worker starts. Conductor never kills a bare recorded PID during
 recovery. On the current head, guardian disappearance is not sufficient proof
-that all descendants are gone, a malformed lease can wedge dispatch, and a
-queue item quarantined with a nonterminal attempt has no complete public
-reconciliation path. Therefore same-host automatic retry is not yet a proven
-unattended contract. The required transition, process-ownership, and recovery
-gates are specified in `docs/vesserin-backend-generation-plan.md`.
+that all descendants are gone, and a queue item quarantined with a nonterminal
+attempt has no complete public mutation path. Therefore same-host automatic
+retry is not yet a proven unattended contract. The required transition,
+process-ownership, and recovery gates are specified in
+`docs/vesserin-backend-generation-plan.md`.
 
 These semantics are local-host semantics. UNC data roots are rejected. Mapped
 network drives and distributed dispatch are outside this contract.

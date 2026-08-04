@@ -77,12 +77,13 @@ workspaces or duplicate attempts.
 
 **State:** local-host core implemented; exit reopened. Queue items, dependency
 gates, bounded concurrency, compact completion records, and generation-fenced
-lease records exist. The Ultra review confirmed duplicate-start and dispatch
-crash windows, malformed-lease deadlock, nonresolvable quarantine states, and
-surviving descendants after normal worker exit. Live or unknown identity is
-conservatively quarantined, but safe unattended retry is not yet proven. UNC
-roots remain rejected; cross-machine and network-filesystem dispatch remain
-unsupported.
+lease records exist. Duplicate-start and pre-launch dispatch crash windows were
+closed by `a84e8fc`; malformed/missing lease deadlock was closed by `243b0ec`
+with evidence-preserving repair and dry-run diagnostics. Nonresolvable
+queue/attempt quarantine states and surviving descendants after normal worker
+exit remain open. Live or unknown process identity is conservatively
+quarantined, but safe unattended retry is not yet proven. UNC roots remain
+rejected; cross-machine and network-filesystem dispatch remain unsupported.
 
 ## Slice 5 — independent semantic review
 

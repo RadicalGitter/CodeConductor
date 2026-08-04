@@ -79,6 +79,27 @@ parity table must not close them implicitly.
 
 The complete pre-launch termination outcomes are recorded in the
 [dispatch fault matrix](dispatch-fault-matrix.md). HARD-001 and HARD-002 are
-closed on `a84e8fc`; the broader Phase 1 state machine is not complete because
-lease repair, public reconciliation, immutable cleanup records, and complete
-queue validation remain separate tracked work.
+closed on `a84e8fc`. At that revision, lease repair, public reconciliation,
+immutable cleanup records, and complete queue validation remained separate
+tracked work; the lease-repair extension below records the later HARD-005
+closure without implying closure of the broader Phase 1 state machine.
+
+## HARD-005 lease-repair extension
+
+- Implementing revision: `243b0ec`
+- Target: preserve single-host ownership while making damaged lease evidence
+  explainable and recoverable
+
+| Prior behavior                                                            | Target behavior                                                                                              | Verification                                                     |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| Missing or malformed `lease.json` silently prevented acquisition forever  | classify initialization, incomplete, and corrupt states; return an evidence-bound owner proposal after grace | missing/malformed/stale-directory characterization and CLI tests |
+| Expiry was required before recovering a dead local process                | direct same-host process absence authorizes recovery even after clock rollback; old bytes are preserved      | future-expiry dead-owner test                                    |
+| An expired live PID was conservatively refused but not explained publicly | report `expired-live-local`, wait, and never steal                                                           | suspend-safe test                                                |
+| Local PID state could be misapplied to another host                       | report `active-remote` and require host-owner judgment                                                       | remote-host test                                                 |
+| Stolen dead leases were deleted                                           | move them under their SHA-256 evidence token before creating a successor                                     | evidence directory and generation assertions                     |
+| Concurrent repair had no durable ownership protocol                       | staged local mutex, exact release, dead-owner recovery, and retained mutex evidence                          | two-recoverer, two-action, and dead-reconciler tests             |
+| No public inspection survived failed dispatcher startup                   | standalone `reconcile --dry-run`, plus MCP inspection and typed action surfaces                              | CLI subprocess and MCP contract tests                            |
+
+This closes HARD-005 only. The same dry-run reports queue/attempt relationship
+defects, but does not mutate them. Exhaustive state convergence and narrowly
+typed queue/attempt actions remain HARD-006.
