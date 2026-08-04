@@ -34,6 +34,7 @@ test("publishes the provider-neutral MCP tool contract", async () => {
     await client.connect(clientTransport);
     const tools = await client.listTools();
     expect(tools.tools.map((tool) => tool.name).sort()).toEqual([
+      "apply_reconciliation_action",
       "cancel_attempt",
       "cancel_queued_job",
       "enqueue_coding_job",
@@ -47,6 +48,7 @@ test("publishes the provider-neutral MCP tool contract", async () => {
       "list_worker_adapters",
       "poll_contract_watches",
       "read_attempt_artifact",
+      "reconcile_runtime",
       "register_contract_watch",
       "remove_attempt_workspace",
       "retry_queued_job",
@@ -61,6 +63,26 @@ test("publishes the provider-neutral MCP tool contract", async () => {
     });
     expect(response.isError).not.toBe(true);
     expect(response.structuredContent).toEqual({ adapters: [] });
+    const reconciliation = await client.callTool({
+      name: "reconcile_runtime",
+      arguments: {},
+    });
+    expect(reconciliation.isError).not.toBe(true);
+    expect(
+      (
+        reconciliation.structuredContent as {
+          dryRun: boolean;
+          lease: { state: string };
+        }
+      ).dryRun,
+    ).toBe(true);
+    expect(
+      (
+        reconciliation.structuredContent as {
+          lease: { state: string };
+        }
+      ).lease.state,
+    ).toBe("absent");
   } finally {
     await client.close();
     await server.close();

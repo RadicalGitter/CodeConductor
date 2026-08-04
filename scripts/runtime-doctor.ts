@@ -15,6 +15,17 @@ try {
   const runtime = createConductorRuntimeFromEnvironment();
   await runtime.conductor.store.initialize();
   await runtime.queue.initialize();
+  const reconciliation = await runtime.reconciler.inspect();
+  const blocked = reconciliation.issues.filter(
+    (issue) => issue.severity === "blocked",
+  );
+  record(
+    "runtime-reconciliation",
+    blocked.length === 0,
+    blocked.length === 0
+      ? `lease=${reconciliation.lease.state}; no blocked state mismatches`
+      : blocked.map((issue) => `${issue.kind}: ${issue.summary}`).join("; "),
+  );
   const kode = runtime.conductor.workers
     .list()
     .find((adapter) => adapter.id === "kode");

@@ -16,6 +16,8 @@ import { ContractSourceService } from "../sources/service.js";
 import { ContractSourcePoller } from "../sources/poller.js";
 import { SourceWatchStore } from "../sources/watch-store.js";
 import { sourceWatchRequestSchema } from "../contracts/source.js";
+import { reconciliationActionSchema } from "../contracts/reconcile.js";
+import { RuntimeReconciler } from "../reconcile/runtime-reconciler.js";
 
 export function createMcpServer(
   conductor: Conductor,
@@ -32,11 +34,43 @@ export function createMcpServer(
     sources,
     new SourceWatchStore(conductor.store),
   ),
+  reconciler = new RuntimeReconciler(
+    conductor,
+    dispatcher.queue,
+    dispatcher.leaseMs,
+  ),
 ): McpServer {
   const server = new McpServer({
     name: "conductor",
     version: CONDUCTOR_VERSION,
   });
+
+  server.registerTool(
+    "reconcile_runtime",
+    {
+      title: "Inspect runtime reconciliation",
+      description:
+        "Dry-run inspection of dispatcher lease and queue-to-attempt relationships. Returns typed issues and narrowly scoped owner actions without changing runtime state.",
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async () => toolResult(await reconciler.inspect()),
+  );
+
+  server.registerTool(
+    "apply_reconciliation_action",
+    {
+      title: "Apply typed reconciliation action",
+      description:
+        "Apply one exact evidence-bound owner action returned by reconcile_runtime. The action quarantines unreadable lease evidence; it cannot force-complete work or accept proposals.",
+      inputSchema: reconciliationActionSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+      },
+    },
+    async (input) => toolResult(await reconciler.apply(input)),
+  );
 
   server.registerTool(
     "list_worker_adapters",

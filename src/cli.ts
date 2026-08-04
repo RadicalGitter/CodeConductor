@@ -5,13 +5,19 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { createConductorRuntimeFromEnvironment } from "./mcp/runtime.js";
 import { createMcpServer } from "./mcp/server.js";
 
-const { conductor, queue, dispatcher, sources, poller } =
+const { conductor, queue, dispatcher, sources, poller, reconciler } =
   createConductorRuntimeFromEnvironment();
 await conductor.store.initialize();
 await queue.initialize();
 await dispatcher.start();
 await poller.start();
-const server = createMcpServer(conductor, dispatcher, sources, poller);
+const server = createMcpServer(
+  conductor,
+  dispatcher,
+  sources,
+  poller,
+  reconciler,
+);
 await server.connect(new StdioServerTransport());
 
 let closing = false;

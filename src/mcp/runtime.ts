@@ -14,6 +14,7 @@ import { ContractSourceService } from "../sources/service.js";
 import { ContractSourcePoller } from "../sources/poller.js";
 import { SourceWatchStore } from "../sources/watch-store.js";
 import { SandboxProfiles } from "../sandbox/docker.js";
+import { RuntimeReconciler } from "../reconcile/runtime-reconciler.js";
 
 export function createConductorFromEnvironment(): Conductor {
   return createConductorRuntimeFromEnvironment().conductor;
@@ -26,6 +27,7 @@ export function createConductorRuntimeFromEnvironment(): {
   sources: ContractSourceService;
   watches: SourceWatchStore;
   poller: ContractSourcePoller;
+  reconciler: RuntimeReconciler;
 } {
   const dataRoot = path.resolve(
     process.env.CONDUCTOR_DATA_DIR ?? path.join(os.homedir(), ".conductor"),
@@ -60,7 +62,20 @@ export function createConductorRuntimeFromEnvironment(): {
     watches,
     environmentInteger("CONDUCTOR_SOURCE_POLL_INTERVAL_MS", 30_000),
   );
-  return { conductor, queue, dispatcher, sources, watches, poller };
+  const reconciler = new RuntimeReconciler(
+    conductor,
+    queue,
+    dispatcher.leaseMs,
+  );
+  return {
+    conductor,
+    queue,
+    dispatcher,
+    sources,
+    watches,
+    poller,
+    reconciler,
+  };
 }
 
 function environmentInteger(name: string, fallback: number): number {
