@@ -141,3 +141,21 @@ sealing, resource quotas, or a POSIX unattended lane.
 The detailed authority and failure matrix is
 [`reconciliation-state-matrix.md`](reconciliation-state-matrix.md). Malformed
 whole-record bytes remain blocked diagnostics rather than reconstructed truth.
+
+## HARD-007 review-evidence extension
+
+- Implementing revision: `657f0ca`
+- Target: make review availability depend on the complete frozen evidence
+  graph rather than one patch checksum
+
+| Prior behavior                                                     | Target behavior                                                                                                               | Verification                                               |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Cached review retrieval rechecked only the patch                   | validate job, terminal attempt, cleanup, verification, status, paths, all logs, lineage, profile files, and attempt inventory | complete binding and purpose assertions                    |
+| Harness/model settings were observed only from the current runtime | persist an exact launch-time adapter/options/invocation profile and file hashes before worker start                           | missing-model ineligibility and harness/config drift tests |
+| Same-size replacement or added evidence could pass unnoticed       | bind byte sizes and SHA-256 plus recursive file/directory inventory                                                           | mutation, replacement, deletion, and addition matrix       |
+| A changed terminal projection could redirect a later read          | compare compact projections with authoritative journals and validate paths first                                              | authoritative transition path-redirection test             |
+| Concurrent or restarted readers could produce inconsistent caches  | derive deterministic v2 packets and serialize same-process creation                                                           | twenty-reader and restart-without-worktree tests           |
+| Legacy cached packets implied more integrity than they carried     | refuse v1 as `legacy-unsealed`                                                                                                | explicit legacy-cache test                                 |
+
+[`review-evidence-seal.md`](review-evidence-seal.md) records the retrieval
+sequence, exact bindings, and residual trust boundary.

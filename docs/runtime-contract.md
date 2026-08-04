@@ -6,31 +6,31 @@
 
 ## MCP surface
 
-| Tool                          | Effect                                                             |
-| ----------------------------- | ------------------------------------------------------------------ |
-| `reconcile_runtime`           | Dry-run lease and queue/attempt relationship inspection            |
-| `apply_reconciliation_action` | Applies one evidence-bound, owner-approved lease or runtime repair |
-| `list_worker_adapters`        | Lists configured adapter contracts                                 |
-| `submit_coding_job`           | Freezes a job and hands it to the owned dispatcher without waiting |
-| `enqueue_coding_job`          | Freezes a job and durably queues it with dependency metadata       |
-| `list_queue`                  | Reads compact queue and completion records                         |
-| `get_queue_item`              | Reads one queue record                                             |
-| `cancel_queued_job`           | Cancels waiting work or its active process tree                    |
-| `retry_queued_job`            | Requeues terminal work as a new evidence-preserving attempt        |
-| `scan_contract_sources`       | Compiles exact-revision comment contracts without mutation         |
-| `enqueue_contract_sources`    | Persists and queues a validated source dependency graph            |
-| `register_contract_watch`     | Persists an automatic moving-ref scan policy                       |
-| `list_contract_watches`       | Reads watch revisions, run ids, and errors                         |
-| `set_contract_watch`          | Enables or disables a persisted watch                              |
-| `poll_contract_watches`       | Runs one immediate watch cycle                                     |
-| `get_attempt`                 | Reads a durable attempt manifest                                   |
-| `get_attempt_cleanup`         | Reads independent cleanup requirements and observations            |
-| `get_verification`            | Reads typed deterministic verification evidence                    |
-| `get_review_bundle`           | Reads a bounded review packet; only its patch is revalidated today |
-| `read_attempt_artifact`       | Reads a bounded named artifact without arbitrary path access       |
-| `wait_for_attempt`            | Waits only while this process owns the attempt; otherwise reads it |
-| `cancel_attempt`              | Cancels the worker and its subprocess tree                         |
-| `remove_attempt_workspace`    | Removes the exact recorded worktree of a terminal attempt          |
+| Tool                          | Effect                                                              |
+| ----------------------------- | ------------------------------------------------------------------- |
+| `reconcile_runtime`           | Dry-run lease and queue/attempt relationship inspection             |
+| `apply_reconciliation_action` | Applies one evidence-bound, owner-approved lease or runtime repair  |
+| `list_worker_adapters`        | Lists configured adapter contracts                                  |
+| `submit_coding_job`           | Freezes a job and hands it to the owned dispatcher without waiting  |
+| `enqueue_coding_job`          | Freezes a job and durably queues it with dependency metadata        |
+| `list_queue`                  | Reads compact queue and completion records                          |
+| `get_queue_item`              | Reads one queue record                                              |
+| `cancel_queued_job`           | Cancels waiting work or its active process tree                     |
+| `retry_queued_job`            | Requeues terminal work as a new evidence-preserving attempt         |
+| `scan_contract_sources`       | Compiles exact-revision comment contracts without mutation          |
+| `enqueue_contract_sources`    | Persists and queues a validated source dependency graph             |
+| `register_contract_watch`     | Persists an automatic moving-ref scan policy                        |
+| `list_contract_watches`       | Reads watch revisions, run ids, and errors                          |
+| `set_contract_watch`          | Enables or disables a persisted watch                               |
+| `poll_contract_watches`       | Runs one immediate watch cycle                                      |
+| `get_attempt`                 | Reads a durable attempt manifest                                    |
+| `get_attempt_cleanup`         | Reads independent cleanup requirements and observations             |
+| `get_verification`            | Reads typed deterministic verification evidence                     |
+| `get_review_bundle`           | Revalidates a complete v2 evidence seal and returns a bounded patch |
+| `read_attempt_artifact`       | Reads a bounded named artifact without arbitrary path access        |
+| `wait_for_attempt`            | Waits only while this process owns the attempt; otherwise reads it  |
+| `cancel_attempt`              | Cancels the worker and its subprocess tree                          |
+| `remove_attempt_workspace`    | Removes the exact recorded worktree of a terminal attempt           |
 
 Submission is intentionally non-blocking. Both submission tools enter the same
 durable queue; `submit_coding_job` is the compatibility form with default
@@ -83,6 +83,13 @@ revision. Existing v1 records without `revision` read as revision zero and are
 upgraded to the v2 record schema on their next transition. Newly reserved
 attempts and queue items are v2.
 
+Before launch, an attempt also records a `worker-execution-profile/v1` with the
+adapter policy, requested model selector, exact invocation fingerprint, and
+hashes for its executable, harness entry, and declared configuration. Missing
+required model or configuration provenance makes deterministic verification
+ineligible; it does not silently inherit review authority from the current
+machine.
+
 Attempt reservation also publishes `cleanup.json` atomically. Its
 `conductor.attempt-cleanup/v1` record registers process-tree,
 external-resource, and workspace subjects with deadlines, then appends typed
@@ -118,6 +125,15 @@ differing source revisions, and tampering become `needs-input` before the child
 worker starts. Review-packet creation revalidates the lineage again. The child
 worker is told both the frozen source and effective proposal baseline; its own
 scope and patch are evaluated only against the latter.
+
+`get_review_bundle` requires an eligible completed attempt and safe cleanup.
+Packet v2 embeds the job, complete terminal attempt, cleanup, verification,
+changed paths, launch profile, and reviewer contract. File bindings cover all
+worker and command logs, patch/status evidence, lineage inputs, and profile
+files; a recursive attempt-directory inventory detects additions. Every
+retrieval validates the seal and bindings before and after reading the bounded
+patch. Legacy v1 caches fail closed. Full details and the tamper matrix are in
+`review-evidence-seal.md`.
 
 Path rules are exact files or directory prefixes; glob syntax and traversal are
 rejected. Empty `allowedPaths` means no positive restriction, while forbidden

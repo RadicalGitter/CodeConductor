@@ -8,9 +8,9 @@ widen them.
 > reopened the first two outcomes below. Attempt fencing, pre-launch recovery,
 > lease repair, and the supported Windows process/cleanup boundary were later
 > closed by the revisions named in their sections. Schema-readable
-> queue/attempt convergence was closed by `1a3f908`. Complete review-evidence
-> binding and resource ceilings remain open; no individual closure is a claim
-> of unattended readiness. The remaining corrective gates live in
+> queue/attempt convergence was closed by `1a3f908`, and review-evidence
+> binding by `657f0ca`. Resource ceilings remain open; no individual closure is
+> a claim of unattended readiness. The remaining corrective gates live in
 > `vesserin-backend-generation-plan.md`.
 
 ## Orphan process recovery

@@ -57,6 +57,8 @@ Conductor
 - Positive path scope, protected paths, setup cleanliness, and acceptance
   command evidence.
 - Bounded artifact retrieval and proposal review packets.
+- Complete v2 review-evidence seals covering terminal state, logs, lineage,
+  inventory, and launch-time model/harness identity.
 - A generation-fenced single-host dispatcher lease.
 - Evidence-preserving lease recovery plus dry-run and owner-approved runtime
   reconciliation.
@@ -74,10 +76,12 @@ termination tests. Malformed and missing lease recovery is also closed by a
 typed, evidence-bound repair path. Process-tree and cleanup closure now pass on
 the supported PowerShell 7 Windows lane; legacy and POSIX-only containment fail
 closed. Schema-readable queue/attempt convergence is also closed through typed,
-evidence-bound actions with crash-safe replay. Evidence sealing and resource
-ceilings remain open before unattended use. Malformed whole-record state stays
-blocked rather than being guessed. The README, runtime contract, and operations
-guide deliberately do not hide that boundary.
+evidence-bound actions with crash-safe replay, and complete review-evidence
+sealing now fails closed on every bound mutation or inventory change. Resource
+ceilings and the other explicitly named roadmap exits remain open before
+unattended use. Malformed whole-record state stays blocked rather than being
+guessed. The README, runtime contract, and operations guide deliberately do not
+hide that boundary.
 
 ## What Conductor does not do
 
@@ -146,6 +150,7 @@ gates are in the
 - [Runtime contract](docs/runtime-contract.md)
 - [Operations and recovery](docs/operations.md)
 - [Runtime reconciliation state matrix](docs/reconciliation-state-matrix.md)
+- [Review evidence seal](docs/review-evidence-seal.md)
 - [Verification model](docs/verification.md)
 - [Source-authored contracts](docs/source-contracts.md)
 - [Behavior parity map](docs/parity-map.md)

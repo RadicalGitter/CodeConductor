@@ -5,7 +5,7 @@
 - Result: HARD-001 and HARD-002 closed at `a84e8fc`; HARD-005 lease repair
   closed separately at `243b0ec`; process/cleanup closure was later recorded in
   the hardening register; HARD-006 was later closed by `1a3f908`, while
-  HARD-007 and HARD-008 remain open
+  HARD-007 was later closed by `657f0ca`, while HARD-008 remains open
 
 The test harness terminates a fresh dispatcher process at each named boundary,
 waits for its dead-owner lease to expire, and starts a new dispatcher over the
@@ -37,8 +37,8 @@ creation, guardian start, worker exit, verification, terminal evidence, review
 creation, or external-resource operations. Malformed lease records are covered
 by the later matrix below. Process and cleanup boundaries were closed for the
 supported Windows lane by the later HARD-003/HARD-004 extension in the
-[parity map](parity-map.md). Public recovery, evidence sealing, and resource
-bounds remain tracked by HARD-007 and HARD-008 in the
+[parity map](parity-map.md). Public recovery and evidence sealing were closed
+by their later matrices; resource bounds remain tracked by HARD-008 in the
 [hardening register](hardening-register.md).
 
 ## Lease-repair fault matrix

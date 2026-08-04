@@ -347,6 +347,15 @@ Exit evidence:
 - sealed evidence reconstructs after restart with its disposable worktree
   removed.
 
+Progress on `657f0ca`: HARD-007 is closed. Review packet v2 binds the complete
+terminal evidence graph and attempt inventory, captures model/harness profile
+files before launch, revalidates before and after the patch read, refuses v1
+caches, and passes the mutation/replacement/deletion/addition, lineage,
+concurrency, restart, and removed-worktree matrix. Phase 3 remains open for its
+separate typed worker-outcome and no-op policies, parent-directory durability,
+corruption quarantine, broader bounded reads, and live model/runtime
+provenance.
+
 ### Phase 4 — coherent package runs and morning handoff
 
 Deliver:

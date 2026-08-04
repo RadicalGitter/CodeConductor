@@ -83,6 +83,14 @@ a disposable proposal baseline, never a merge or acceptance decision. The
 child patch and path scope are measured from that derived baseline, so inherited
 parent changes cannot launder wider authority into the child contract.
 
+Review availability is a deterministic evidence transition, not a reviewer
+judgment. The launch transition freezes the requested model/harness profile and
+hashes its local executable, entry, and configuration evidence. Review packet
+v2 then seals the complete terminal attempt, cleanup, verification, logs,
+lineage, and attempt-directory inventory. Retrieval validates the whole graph
+before and after reading the bounded patch. The semantic reviewer receives that
+proposal packet but gains no mutation or acceptance authority.
+
 Queue and attempt records use legal-transition tables and monotonically
 increasing revisions. Each revision first publishes a complete immutable
 journal snapshot by atomic directory rename, then refreshes the compact JSON

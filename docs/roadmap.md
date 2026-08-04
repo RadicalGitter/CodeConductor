@@ -98,14 +98,13 @@ bounded correction attempts, reviewer ablation metrics, and compact handoff.
 **Exit:** review measurably improves hidden-check survival or is disabled as an
 uneconomic route.
 
-**State:** packet foundation implemented; evidence-sealing gate reopened.
-Eligible terminal attempts can emit a durable advisory packet containing the
-frozen contract, verification, changed paths, evidence hashes, and a bounded
-patch. Patch tampering is detected, but cached retrieval currently revalidates
-only that patch rather than every bound artifact. No reviewer is invoked and no
-finding can accept or mutate work; complete binding validation, reviewer
-adapters, typed findings, bounded correction, and ablation measurement remain
-future work.
+**State:** evidence sealing implemented; reviewer integration remains planned.
+Revision `657f0ca` closes HARD-007 with a v2 packet that validates the frozen
+job, immutable attempt, cleanup, all deterministic evidence and logs, lineage,
+attempt inventory, and the launch-time model/harness profile on every retrieval
+before and after the bounded patch read. Legacy v1 caches fail closed. No
+reviewer is invoked and no finding can accept or mutate work; reviewer adapters,
+typed findings, bounded correction, and ablation measurement remain planned.
 
 ## Slice 6 — Vesserin plugin
 

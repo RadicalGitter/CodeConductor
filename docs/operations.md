@@ -6,9 +6,9 @@
 > closed by `a84e8fc`, and malformed/missing lease recovery was closed by
 > `243b0ec`. Windows process-tree and cleanup closure were closed by `caae1c8`,
 > `726e1cf`, `3afab31`, and `77c2b54`. Schema-readable queue/attempt
-> convergence was closed by `1a3f908`. Review-evidence integrity and resource
-> budgets remain open. Use attended
-> trusted-worker trials only until the remaining hardening exits in
+> convergence was closed by `1a3f908`, and review-evidence integrity by
+> `657f0ca`. Resource budgets remain open. Use attended trusted-worker trials
+> only until the remaining hardening exits in
 > `vesserin-backend-generation-plan.md` pass.
 
 This run mode watches committed source contracts, queues each newly observed
@@ -172,9 +172,15 @@ contains:
 - an advisory reviewer contract with `pass`, `fail`, and `needs-context`
   outcomes.
 
-The packet is cached durably as `review-packet.json` beside the attempt. A
-later request refuses to return a patch whose bytes no longer match the bound
-hash. A Sonnet or other semantic reviewer remains advisory: it cannot execute,
+The v2 packet is cached durably as `review-packet.json` beside the attempt. Every
+request revalidates the job, terminal attempt, cleanup, patch, status, changed
+paths, verification, worker and command logs, lineage, complete attempt
+inventory, and launch-time model/harness profile before and after reading the
+bounded patch. A v1 cache is refused rather than silently upgraded. If Codex is
+used as a worker, set `CONDUCTOR_CODEX_CONFIG_FILE` to the exact config file
+whose hash must be bound; Kode binds `KODE_CONFIG_DIR/config.json`.
+
+A Sonnet or other semantic reviewer remains advisory: it cannot execute,
 accept, merge, or mutate. Reviewer integration and correction attempts stay a
 separate measured slice so the previously rejected worker self-review pattern
 does not re-enter the pipeline under another name.

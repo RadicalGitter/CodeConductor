@@ -167,7 +167,7 @@ update on the exact implementing revision.
 ## HARD-007 — complete review evidence binding
 
 - Severity: P0 for Vesserin pilot
-- State: confirmed; open
+- State: closed by `657f0ca`
 - Failure: cached review retrieval revalidates the patch but not every artifact
   on which eligibility and review claims depend.
 - Required change: immutable or content-addressed terminal evidence and
@@ -178,6 +178,20 @@ update on the exact implementing revision.
   reconstructs valid evidence.
 - Closure updates: runtime contract, review packet schema, evidence verifier,
   and tamper matrix.
+- Closure evidence: packet v2 embeds and seals the frozen job, immutable
+  terminal attempt, cleanup, verification, paths, inventory, lineage, worker
+  and command logs, and the launch-time model/harness profile. Retrieval
+  validates every binding before and after the bounded patch read. The tamper
+  matrix covers mutation of every local binding, same-size replacement,
+  deletion, addition, packet corruption, legacy cache refusal, transition-path
+  redirection, harness/config drift, cached-lineage drift, twenty simultaneous
+  creators, restart, and removed worktree reconstruction. See
+  `review-evidence-seal.md`. The complete gate passed with 82 tests and 1,136
+  assertions.
+- Residual boundary: this is hash-bound local integrity, not a signature
+  against an administrator rewriting the entire evidence graph. It binds the
+  requested model profile and local harness/config bytes; live inference-server
+  attestation remains broader Phase 3 provenance work.
 
 ## HARD-008 — bounded resources and retention
 
