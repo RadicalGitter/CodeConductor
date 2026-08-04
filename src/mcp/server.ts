@@ -54,7 +54,7 @@ export function createMcpServer(
     {
       title: "Submit isolated coding job",
       description:
-        "Freeze a proposal-only job at an exact Git revision, reserve an isolated worktree attempt, and start its worker asynchronously.",
+        "Freeze a proposal-only job at an exact Git revision and hand it to the owned durable dispatcher. Returns queue state without waiting for worker completion.",
       inputSchema: jobRequestSchema.shape,
       annotations: {
         readOnlyHint: false,
@@ -62,7 +62,7 @@ export function createMcpServer(
         idempotentHint: false,
       },
     },
-    async (input) => toolResult(await conductor.submitJob(input)),
+    async (input) => toolResult(await dispatcher.submit(input)),
   );
 
   server.registerTool(

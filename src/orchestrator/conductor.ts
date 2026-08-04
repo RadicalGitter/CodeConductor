@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { open, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -70,6 +71,7 @@ export class ProposalLineageError extends Error {
 export class Conductor {
   private readonly activeAttempts = new Map<string, AbortController>();
   private readonly executions = new Map<string, Promise<AttemptManifest>>();
+  private readonly launcherInstanceId = randomUUID();
 
   constructor(
     readonly store: ArtifactStore,
@@ -116,24 +118,10 @@ export class Conductor {
     return reservation.contract;
   }
 
-  async submitJob(input: unknown): Promise<RunJobResult> {
-    const contract = await this.prepareJob(input);
-    const attemptReservation = await this.store.reserveInitialAttempt(contract);
-    if (!attemptReservation.created) {
-      return summarize(attemptReservation.manifest, true);
-    }
-    this.launchAttempt(contract, attemptReservation.manifest);
-    return summarize(attemptReservation.manifest, false);
-  }
-
-  async startPreparedJob(jobId: string): Promise<RunJobResult> {
-    const reserved = await this.reservePreparedAttempt(jobId);
-    return this.startReservedAttempt(reserved.attemptId);
-  }
-
   async reservePreparedAttempt(
     jobId: string,
     parentAttemptIds: string[] = [],
+    dispatchOperationId?: string,
   ): Promise<RunJobResult> {
     const contract = await this.store.readJob(jobId);
     const adapter = this.workers.get(contract.worker.adapterId);
@@ -153,19 +141,40 @@ export class Conductor {
     const attemptReservation = await this.store.reserveAttempt(
       contract,
       lineage,
+      dispatchOperationId,
     );
     return summarize(attemptReservation.manifest, false);
   }
 
-  async startReservedAttempt(attemptId: string): Promise<RunJobResult> {
+  async startReservedAttempt(
+    attemptId: string,
+    dispatchOperationId: string,
+  ): Promise<RunJobResult> {
+    const claimed = await this.claimReservedAttempt(
+      attemptId,
+      dispatchOperationId,
+    );
+    await this.launchClaimedAttempt(attemptId, dispatchOperationId);
+    return claimed;
+  }
+
+  async claimReservedAttempt(
+    attemptId: string,
+    dispatchOperationId: string,
+  ): Promise<RunJobResult> {
     const manifest = await this.getAttempt(attemptId);
     if (manifest.status !== "reserved") {
       throw new Error(
         `Attempt ${attemptId} cannot start from status ${manifest.status}`,
       );
     }
-    if (this.executions.has(attemptId)) {
-      throw new Error(`Attempt ${attemptId} is already executing`);
+    if (
+      manifest.dispatchOperationId &&
+      manifest.dispatchOperationId !== dispatchOperationId
+    ) {
+      throw new Error(
+        `Attempt ${attemptId} belongs to dispatch operation ${manifest.dispatchOperationId}`,
+      );
     }
     const contract = await this.store.readJob(manifest.jobId);
     if (contract.execution.boundary.kind === "external-sandbox") {
@@ -177,14 +186,45 @@ export class Conductor {
         `Worker adapter is not available: ${contract.worker.adapterId}`,
       );
     }
-    this.launchAttempt(contract, manifest);
-    return summarize(manifest, false);
+    const claimed = await this.store.transitionAttempt(manifest, {
+      status: "claimed",
+      dispatchOperationId,
+      launchOwner: {
+        instanceId: this.launcherInstanceId,
+        processId: process.pid,
+        claimedAt: new Date().toISOString(),
+      },
+    });
+    return summarize(claimed, false);
   }
 
-  async runJob(input: unknown): Promise<RunJobResult> {
-    const submitted = await this.submitJob(input);
-    if (submitted.idempotentReplay) return submitted;
-    return this.waitForAttempt(submitted.attemptId);
+  async launchClaimedAttempt(
+    attemptId: string,
+    dispatchOperationId: string,
+  ): Promise<RunJobResult> {
+    const manifest = await this.getAttempt(attemptId);
+    if (
+      manifest.status !== "claimed" ||
+      manifest.dispatchOperationId !== dispatchOperationId
+    ) {
+      throw new Error(
+        `Attempt ${attemptId} is not claimed by dispatch operation ${dispatchOperationId}`,
+      );
+    }
+    if (manifest.launchOwner?.instanceId !== this.launcherInstanceId) {
+      throw new Error(
+        `Attempt ${attemptId} belongs to another launcher instance`,
+      );
+    }
+    if (this.executions.has(attemptId)) {
+      throw new Error(`Attempt ${attemptId} is already executing`);
+    }
+    const contract = await this.store.readJob(manifest.jobId);
+    if (this.executions.has(attemptId)) {
+      throw new Error(`Attempt ${attemptId} is already executing`);
+    }
+    this.launchAttempt(contract, manifest);
+    return summarize(manifest, false);
   }
 
   async waitForAttempt(attemptId: string): Promise<RunJobResult> {
@@ -197,6 +237,10 @@ export class Conductor {
 
   async getAttempt(attemptId: string): Promise<AttemptManifest> {
     return this.store.findAttempt(attemptId);
+  }
+
+  async listAttempts(): Promise<AttemptManifest[]> {
+    return this.store.listAttempts();
   }
 
   async getVerification(attemptId: string): Promise<VerificationRecord> {
@@ -328,7 +372,7 @@ export class Conductor {
     message = "Attempt cancelled before worker execution",
   ): Promise<AttemptManifest> {
     const manifest = await this.getAttempt(attemptId);
-    if (manifest.status !== "reserved") return manifest;
+    if (!["reserved", "claimed"].includes(manifest.status)) return manifest;
     return this.update(manifest, {
       status: "cancelled",
       finishedAt: new Date().toISOString(),
@@ -465,15 +509,14 @@ export class Conductor {
     if (isAttemptTerminal(manifest.status)) {
       return { disposition: "terminal", manifest };
     }
-    if (manifest.status === "reserved") {
+    if (["reserved", "claimed"].includes(manifest.status)) {
       manifest = await this.update(manifest, {
         status: "cancelled",
         finishedAt: new Date().toISOString(),
         verificationStatus: "ineligible",
         failure: {
           kind: "orphaned",
-          message:
-            "Reserved attempt lost dispatcher ownership before execution",
+          message: `${manifest.status === "claimed" ? "Claimed" : "Reserved"} attempt lost dispatcher ownership before execution`,
         },
       });
       return { disposition: "safe-to-retry", manifest };
@@ -527,7 +570,7 @@ export class Conductor {
   async removeAttemptWorkspace(attemptId: string): Promise<AttemptManifest> {
     let manifest = await this.getAttempt(attemptId);
     if (
-      ["reserved", "preparing", "running", "verifying"].includes(
+      ["reserved", "claimed", "preparing", "running", "verifying"].includes(
         manifest.status,
       )
     ) {
@@ -1039,9 +1082,7 @@ export class Conductor {
     manifest: AttemptManifest,
     patch: Partial<AttemptManifest>,
   ): Promise<AttemptManifest> {
-    const updated = { ...manifest, ...patch };
-    await this.store.writeAttempt(updated);
-    return updated;
+    return this.store.transitionAttempt(manifest, patch);
   }
 }
 

@@ -8,10 +8,17 @@ import {
   queueItemSchema,
   type DispatcherLease,
   type QueueItem,
+  type QueueItemStatus,
 } from "../contracts/queue.js";
 import type { JobContract } from "../contracts/job.js";
 import { isProcessAlive } from "../runtime/process-runner.js";
 import { ArtifactStore } from "../storage/artifact-store.js";
+import {
+  commitTransition,
+  readLatestTransition,
+  TransitionConflictError,
+  type TransitionFailpoint,
+} from "../storage/transitions.js";
 
 export class QueueStore {
   readonly root: string;
@@ -19,6 +26,9 @@ export class QueueStore {
   constructor(
     readonly artifacts: ArtifactStore,
     root = path.join(artifacts.root, "queue"),
+    private readonly options: {
+      transitionFailpoint?: TransitionFailpoint;
+    } = {},
   ) {
     this.root = path.resolve(root);
     if (this.root.startsWith("\\\\")) {
@@ -41,9 +51,10 @@ export class QueueStore {
     const staging = `${directory}.reserve-${process.pid}-${randomUUID()}`;
     const now = new Date().toISOString();
     const item = queueItemSchema.parse({
-      schema: "conductor.queue-item/v1",
+      schema: "conductor.queue-item/v2",
       jobId: contract.jobId,
       status: "queued",
+      revision: 0,
       priority: options.priority,
       dependsOnJobIds: [...new Set(options.dependsOnJobIds)].sort(),
       createdAt: now,
@@ -85,9 +96,24 @@ export class QueueStore {
   }
 
   async read(jobId: string): Promise<QueueItem> {
-    return queueItemSchema.parse(
+    const projection = queueItemSchema.parse(
       JSON.parse(await readFile(this.itemPath(jobId), "utf8")),
     );
+    const latest = await readLatestTransition({
+      recordKind: "queue-item",
+      recordId: jobId,
+      transitionsRoot: this.itemTransitionsRoot(jobId),
+      snapshotName: "queue.json",
+      parse: (value) => queueItemSchema.parse(value),
+      revisionOf: (value) => value.revision,
+    });
+    if (!latest) return projection;
+    if (latest.revision < projection.revision) {
+      throw new Error(
+        `Queue item ${jobId} projection revision ${projection.revision} is ahead of its transition journal ${latest.revision}`,
+      );
+    }
+    return latest;
   }
 
   async list(): Promise<QueueItem[]> {
@@ -109,13 +135,39 @@ export class QueueStore {
   }
 
   async update(item: QueueItem, patch: Partial<QueueItem>): Promise<QueueItem> {
+    const current = await this.read(item.jobId);
+    if (
+      current.revision !== item.revision ||
+      JSON.stringify(current) !== JSON.stringify(item)
+    ) {
+      throw new TransitionConflictError(
+        "queue-item",
+        item.jobId,
+        item.revision,
+        current.revision,
+      );
+    }
     const updated = queueItemSchema.parse({
-      ...item,
+      ...current,
       ...patch,
-      jobId: item.jobId,
+      schema: "conductor.queue-item/v2",
+      jobId: current.jobId,
+      revision: current.revision + 1,
       updatedAt: new Date().toISOString(),
     });
-    await this.artifacts.writeJsonAtomic(this.itemPath(item.jobId), updated);
+    assertQueueTransition(current.status, updated.status);
+    await commitTransition({
+      recordKind: "queue-item",
+      recordId: current.jobId,
+      expectedRevision: current.revision,
+      value: updated,
+      transitionsRoot: this.itemTransitionsRoot(current.jobId),
+      snapshotName: "queue.json",
+      projectionPath: this.itemPath(current.jobId),
+      writeJsonAtomic: (target, value) =>
+        this.artifacts.writeJsonAtomic(target, value),
+      failpoint: this.options.transitionFailpoint,
+    });
     return updated;
   }
 
@@ -220,6 +272,10 @@ export class QueueStore {
     return path.join(this.itemDirectory(jobId), "queue.json");
   }
 
+  itemTransitionsRoot(jobId: string): string {
+    return path.join(this.itemDirectory(jobId), "transitions");
+  }
+
   private itemDirectory(jobId: string): string {
     return path.join(this.itemsRoot(), safeSegment(jobId));
   }
@@ -290,6 +346,34 @@ export class QueueStore {
       generation: next,
     });
     return next;
+  }
+}
+
+const allowedQueueTransitions: Record<QueueItemStatus, QueueItemStatus[]> = {
+  queued: ["queued", "dispatching", "cancelled", "needs-input"],
+  dispatching: ["dispatching", "queued", "running", "cancelled", "needs-input"],
+  running: [
+    "running",
+    "queued",
+    "cancelling",
+    "completed",
+    "failed",
+    "needs-input",
+    "cancelled",
+  ],
+  cancelling: ["cancelling", "completed", "failed", "needs-input", "cancelled"],
+  completed: ["completed", "queued"],
+  failed: ["failed", "queued"],
+  "needs-input": ["needs-input", "queued"],
+  cancelled: ["cancelled", "queued"],
+};
+
+function assertQueueTransition(
+  current: QueueItemStatus,
+  next: QueueItemStatus,
+): void {
+  if (!allowedQueueTransitions[current].includes(next)) {
+    throw new Error(`Illegal queue transition: ${current} -> ${next}`);
   }
 }
 

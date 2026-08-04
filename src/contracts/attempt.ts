@@ -2,6 +2,7 @@ import { z } from "zod/v4";
 
 export const attemptStatusSchema = z.enum([
   "reserved",
+  "claimed",
   "preparing",
   "running",
   "verifying",
@@ -12,6 +13,12 @@ export const attemptStatusSchema = z.enum([
 ]);
 
 export type AttemptStatus = z.infer<typeof attemptStatusSchema>;
+
+export const attemptLaunchOwnerSchema = z.object({
+  instanceId: z.string().uuid(),
+  processId: z.number().int().positive(),
+  claimedAt: z.string().datetime(),
+});
 
 export const processGuardianIdentitySchema = z.object({
   schema: z.literal("conductor.process-guardian/v1"),
@@ -87,12 +94,15 @@ export const failureKindSchema = z.enum([
 ]);
 
 export const attemptManifestSchema = z.object({
-  schema: z.literal("conductor.attempt/v1"),
+  schema: z.enum(["conductor.attempt/v1", "conductor.attempt/v2"]),
   attemptId: z.string().min(1),
   jobId: z.string().min(1),
   ordinal: z.number().int().positive(),
   adapterId: z.string().min(1),
   status: attemptStatusSchema,
+  revision: z.number().int().nonnegative().default(0),
+  dispatchOperationId: z.string().uuid().optional(),
+  launchOwner: attemptLaunchOwnerSchema.optional(),
   createdAt: z.string().datetime(),
   startedAt: z.string().datetime().optional(),
   finishedAt: z.string().datetime().optional(),
@@ -159,14 +169,17 @@ export function createReservedAttempt(input: {
   createdAt?: Date;
   artifacts: AttemptManifest["artifacts"];
   lineage?: ProposalLineage;
+  dispatchOperationId?: string;
 }): AttemptManifest {
   return attemptManifestSchema.parse({
-    schema: "conductor.attempt/v1",
+    schema: "conductor.attempt/v2",
     attemptId: input.attemptId,
     jobId: input.jobId,
     ordinal: input.ordinal,
     adapterId: input.adapterId,
     status: "reserved",
+    revision: 0,
+    dispatchOperationId: input.dispatchOperationId,
     createdAt: (input.createdAt ?? new Date()).toISOString(),
     artifacts: input.artifacts,
     lineage: input.lineage,

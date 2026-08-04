@@ -16,7 +16,9 @@ export type QueuedJobRequest = z.infer<typeof queuedJobRequestSchema>;
 
 export const queueItemStatusSchema = z.enum([
   "queued",
+  "dispatching",
   "running",
+  "cancelling",
   "completed",
   "failed",
   "needs-input",
@@ -37,9 +39,11 @@ export const queueCompletionSchema = z.object({
 });
 
 export const queueItemSchema = z.object({
-  schema: z.literal("conductor.queue-item/v1"),
+  schema: z.enum(["conductor.queue-item/v1", "conductor.queue-item/v2"]),
   jobId: z.string().min(1),
   status: queueItemStatusSchema,
+  revision: z.number().int().nonnegative().default(0),
+  dispatchOperationId: z.string().uuid().optional(),
   priority: z.number().int().min(-100).max(100),
   dependsOnJobIds: z.array(z.string().min(1)),
   createdAt: z.string().datetime(),

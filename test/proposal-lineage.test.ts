@@ -15,7 +15,7 @@ import type {
 } from "../src/workers/adapter.js";
 import { WorkerRegistry } from "../src/workers/adapter.js";
 import { GitWorkspaceManager } from "../src/workspaces/git-workspace.js";
-import { createTestRepository } from "./helpers.js";
+import { createTestRepository, runTestJob } from "./helpers.js";
 
 const fixture = fileURLToPath(
   new URL("./fixtures/lineage-worker.ts", import.meta.url),
@@ -131,7 +131,8 @@ test("dependent work consumes a hash-bound proposal lineage without widening chi
 test("composition rejects evidence tampering before starting the child worker", async () => {
   const environment = await createEnvironment("tamper");
   try {
-    const parent = await environment.conductor.runJob(
+    const parent = await runTestJob(
+      environment.conductor,
       request(environment.repository.root, "tamper-parent", ["parent.txt"], {
         action: "write",
         path: "parent.txt",
@@ -148,6 +149,7 @@ test("composition rejects evidence tampering before starting the child worker", 
     const reserved = await environment.conductor.reservePreparedAttempt(
       child.jobId,
       [parent.attemptId],
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     );
     const parentAttempt = await environment.conductor.getAttempt(
       parent.attemptId,
@@ -158,7 +160,10 @@ test("composition rejects evidence tampering before starting the child worker", 
       "utf8",
     );
 
-    await environment.conductor.startReservedAttempt(reserved.attemptId);
+    await environment.conductor.startReservedAttempt(
+      reserved.attemptId,
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    );
     const result = await environment.conductor.waitForAttempt(
       reserved.attemptId,
     );
@@ -177,14 +182,16 @@ test("composition rejects evidence tampering before starting the child worker", 
 test("composition quarantines conflicting sibling proposals without running the child", async () => {
   const environment = await createEnvironment("conflict");
   try {
-    const first = await environment.conductor.runJob(
+    const first = await runTestJob(
+      environment.conductor,
       request(environment.repository.root, "conflict-first", ["seed.txt"], {
         action: "write",
         path: "seed.txt",
         content: "first sibling\n",
       }),
     );
-    const second = await environment.conductor.runJob(
+    const second = await runTestJob(
+      environment.conductor,
       request(environment.repository.root, "conflict-second", ["seed.txt"], {
         action: "write",
         path: "seed.txt",
@@ -201,9 +208,13 @@ test("composition quarantines conflicting sibling proposals without running the 
     const reserved = await environment.conductor.reservePreparedAttempt(
       child.jobId,
       [first.attemptId, second.attemptId],
+      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     );
 
-    await environment.conductor.startReservedAttempt(reserved.attemptId);
+    await environment.conductor.startReservedAttempt(
+      reserved.attemptId,
+      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    );
     const result = await environment.conductor.waitForAttempt(
       reserved.attemptId,
     );

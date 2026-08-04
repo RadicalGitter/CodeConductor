@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Conductor } from "../src/orchestrator/conductor.js";
+import { Conductor, type RunJobResult } from "../src/orchestrator/conductor.js";
 import type { JobContract } from "../src/contracts/job.js";
 import {
   ArtifactStore,
@@ -16,7 +16,7 @@ import {
   GitWorkspaceManager,
   type GitWorkspace,
 } from "../src/workspaces/git-workspace.js";
-import { createTestRepository } from "./helpers.js";
+import { createTestRepository, runTestJob } from "./helpers.js";
 
 const fixture = fileURLToPath(
   new URL("./fixtures/mutate-worker.ts", import.meta.url),
@@ -42,21 +42,7 @@ test("runs a durable proposal in an exact-revision worktree and replays idempote
       idempotencyKey: "durable-proposal-test",
       retainWorkspace: true,
     };
-    const submissions = await Promise.all([
-      conductor.submitJob(request),
-      conductor.submitJob(request),
-    ]);
-    expect(
-      submissions.filter((submission) => !submission.idempotentReplay),
-    ).toHaveLength(1);
-    expect(
-      new Set(submissions.map((submission) => submission.attemptId)).size,
-    ).toBe(1);
-    const submitted = submissions.find(
-      (submission) => !submission.idempotentReplay,
-    )!;
-    expect(submitted.status).toBe("reserved");
-    const result = await conductor.waitForAttempt(submitted.attemptId);
+    const result = await runTestJob(conductor, request);
     retainedWorkspace = {
       path: result.workspacePath!,
       repositoryRoot: repository.root,
@@ -107,12 +93,15 @@ test("runs a durable proposal in an exact-revision worktree and replays idempote
     );
     await writeFile(result.artifacts.proposalPatch, originalPatch);
 
-    const replay = await conductor.runJob(request);
+    const replay = await runTestJob(conductor, request);
     expect(replay.idempotentReplay).toBe(true);
     expect(replay.attemptId).toBe(result.attemptId);
 
     await expect(
-      conductor.runJob({ ...request, objective: "A conflicting objective" }),
+      runTestJob(conductor, {
+        ...request,
+        objective: "A conflicting objective",
+      }),
     ).rejects.toBeInstanceOf(IdempotencyConflictError);
 
     const removed = await conductor.removeAttemptWorkspace(result.attemptId);
@@ -125,6 +114,127 @@ test("runs a durable proposal in an exact-revision worktree and replays idempote
     await rm(dataRoot, { recursive: true, force: true });
   }
 });
+
+test("100 jittered simultaneous callers claim and launch one reserved attempt once", async () => {
+  const repository = await createTestRepository();
+  const dataRoot = await mkdtemp(path.join(os.tmpdir(), "conductor-claim-"));
+  const store = new ArtifactStore(dataRoot);
+  const workspaces = new CountingWorkspaceManager(store.workspaceRoot());
+  const conductor = new Conductor(
+    store,
+    workspaces,
+    new WorkerRegistry([new FixtureAdapter()]),
+  );
+  let retainedWorkspace: GitWorkspace | undefined;
+
+  try {
+    const contract = await conductor.prepareJob({
+      objective: "Claim one worker launch",
+      repositoryPath: repository.root,
+      adapterId: "fixture",
+      idempotencyKey: "single-launch-claim",
+      retainWorkspace: true,
+      scope: { allowedPaths: ["generated.txt"] },
+    });
+    const dispatchOperationId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const reserved = await conductor.reservePreparedAttempt(
+      contract.jobId,
+      [],
+      dispatchOperationId,
+    );
+    await expect(
+      conductor.startReservedAttempt(
+        reserved.attemptId,
+        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      ),
+    ).rejects.toThrow(`belongs to dispatch operation ${dispatchOperationId}`);
+    const starts = await Promise.allSettled(
+      Array.from({ length: 100 }, async (_, index) => {
+        await new Promise((resolve) =>
+          setTimeout(resolve, (index * 17 + 3) % 11),
+        );
+        return conductor.startReservedAttempt(
+          reserved.attemptId,
+          dispatchOperationId,
+        );
+      }),
+    );
+
+    expect(starts.filter((start) => start.status === "fulfilled")).toHaveLength(
+      1,
+    );
+    const result = await conductor.waitForAttempt(reserved.attemptId);
+    expect(result.status).toBe("completed");
+    expect(workspaces.createCalls).toBe(1);
+    retainedWorkspace = {
+      path: result.workspacePath!,
+      repositoryRoot: repository.root,
+      baseRevision: repository.revision,
+    };
+    await conductor.removeAttemptWorkspace(result.attemptId);
+    retainedWorkspace = undefined;
+  } finally {
+    if (retainedWorkspace) await workspaces.remove(retainedWorkspace);
+    await rm(repository.root, { recursive: true, force: true });
+    await rm(dataRoot, { recursive: true, force: true });
+  }
+});
+
+test("100 randomized claim races each enter the launch seam exactly once", async () => {
+  const repository = await createTestRepository();
+  const dataRoot = await mkdtemp(path.join(os.tmpdir(), "conductor-races-"));
+  const store = new ArtifactStore(dataRoot);
+  const conductor = new ClaimCountingConductor(
+    store,
+    new GitWorkspaceManager(store.workspaceRoot()),
+    new WorkerRegistry([new FixtureAdapter()]),
+  );
+
+  try {
+    const template = await conductor.prepareJob({
+      objective: "Create a template for repeated claim races",
+      repositoryPath: repository.root,
+      adapterId: "fixture",
+      idempotencyKey: "claim-race-template",
+    });
+    for (let trial = 0; trial < 100; trial += 1) {
+      const suffix = trial.toString().padStart(4, "0");
+      const contract = {
+        ...template,
+        jobId: `job_claim_round_${suffix}`,
+        idempotencyKey: `claim-round-${suffix}`,
+      };
+      await store.reserveJob(contract);
+      const dispatchOperationId = `00000000-0000-4000-8000-${trial
+        .toString(16)
+        .padStart(12, "0")}`;
+      const reserved = await store.reserveInitialAttempt(
+        contract,
+        dispatchOperationId,
+      );
+      const callers = 2 + ((trial * 37 + 11) % 19);
+      const before = conductor.launches;
+      const starts = await Promise.allSettled(
+        Array.from({ length: callers }, async (_, caller) => {
+          await new Promise((resolve) =>
+            setTimeout(resolve, (trial * 13 + caller * 7) % 5),
+          );
+          return conductor.startReservedAttempt(
+            reserved.manifest.attemptId,
+            dispatchOperationId,
+          );
+        }),
+      );
+      expect(
+        starts.filter((start) => start.status === "fulfilled"),
+      ).toHaveLength(1);
+      expect(conductor.launches).toBe(before + 1);
+    }
+  } finally {
+    await rm(repository.root, { recursive: true, force: true });
+    await rm(dataRoot, { recursive: true, force: true });
+  }
+}, 30_000);
 
 class FixtureAdapter implements WorkerAdapter {
   readonly description = {
@@ -142,6 +252,45 @@ class FixtureAdapter implements WorkerAdapter {
       executable: process.execPath,
       args: [fixture, workspacePath],
       cwd: workspacePath,
+    };
+  }
+}
+
+class CountingWorkspaceManager extends GitWorkspaceManager {
+  createCalls = 0;
+
+  override async create(input: {
+    repositoryRoot: string;
+    baseRevision: string;
+    attemptId: string;
+  }) {
+    this.createCalls += 1;
+    return super.create(input);
+  }
+}
+
+class ClaimCountingConductor extends Conductor {
+  launches = 0;
+
+  override async launchClaimedAttempt(
+    attemptId: string,
+    dispatchOperationId: string,
+  ): Promise<RunJobResult> {
+    const manifest = await this.getAttempt(attemptId);
+    if (
+      manifest.status !== "claimed" ||
+      manifest.dispatchOperationId !== dispatchOperationId
+    ) {
+      throw new Error("Launch seam received an invalid durable claim");
+    }
+    this.launches += 1;
+    return {
+      jobId: manifest.jobId,
+      attemptId: manifest.attemptId,
+      status: manifest.status,
+      idempotentReplay: false,
+      artifacts: manifest.artifacts,
+      verificationStatus: manifest.verificationStatus,
     };
   }
 }

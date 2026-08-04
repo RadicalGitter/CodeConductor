@@ -12,7 +12,7 @@ import { verificationRecordSchema } from "../src/verification/types.js";
 import type { WorkerAdapter } from "../src/workers/adapter.js";
 import { WorkerRegistry } from "../src/workers/adapter.js";
 import { GitWorkspaceManager } from "../src/workspaces/git-workspace.js";
-import { createTestRepository } from "./helpers.js";
+import { createTestRepository, runTestJob } from "./helpers.js";
 
 const standardFixture = fileURLToPath(
   new URL("./fixtures/mutate-worker.ts", import.meta.url),
@@ -39,7 +39,7 @@ test("setup, scope, and acceptance evidence gate review eligibility", async () =
   const retainedAttempts: string[] = [];
 
   try {
-    const eligible = await conductor.runJob({
+    const eligible = await runTestJob(conductor, {
       objective: "Create the allowed generated file",
       repositoryPath: repository.root,
       adapterId: "fixture",
@@ -92,7 +92,7 @@ test("setup, scope, and acceptance evidence gate review eligibility", async () =
     await conductor.removeAttemptWorkspace(eligible.attemptId);
     retainedAttempts.pop();
 
-    const scopeViolation = await conductor.runJob({
+    const scopeViolation = await runTestJob(conductor, {
       objective: "Attempt to change a protected file",
       repositoryPath: repository.root,
       adapterId: "fixture-protected",
@@ -128,7 +128,7 @@ test("setup, scope, and acceptance evidence gate review eligibility", async () =
     await conductor.removeAttemptWorkspace(scopeViolation.attemptId);
     retainedAttempts.pop();
 
-    const verifierMutation = await conductor.runJob({
+    const verifierMutation = await runTestJob(conductor, {
       objective: "Create the allowed generated file before a mutating check",
       repositoryPath: repository.root,
       adapterId: "fixture",
@@ -154,7 +154,7 @@ test("setup, scope, and acceptance evidence gate review eligibility", async () =
     await conductor.removeAttemptWorkspace(verifierMutation.attemptId);
     retainedAttempts.pop();
 
-    const dirtySetup = await conductor.runJob({
+    const dirtySetup = await runTestJob(conductor, {
       objective: "Worker must not run after setup mutates repository state",
       repositoryPath: repository.root,
       adapterId: "fixture",

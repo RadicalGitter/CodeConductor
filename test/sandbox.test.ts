@@ -3,6 +3,7 @@ import { access, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import type { AttemptManifest } from "../src/contracts/attempt.js";
 import type { JobContract } from "../src/contracts/job.js";
 import { Conductor } from "../src/orchestrator/conductor.js";
 import { DurableDispatcher } from "../src/queue/dispatcher.js";
@@ -15,7 +16,7 @@ import { ArtifactStore } from "../src/storage/artifact-store.js";
 import type { WorkerAdapter } from "../src/workers/adapter.js";
 import { WorkerRegistry } from "../src/workers/adapter.js";
 import { GitWorkspaceManager } from "../src/workspaces/git-workspace.js";
-import { createTestRepository } from "./helpers.js";
+import { createTestRepository, runTestJob } from "./helpers.js";
 
 const digest = "a".repeat(64);
 
@@ -156,8 +157,11 @@ test("orphan recovery releases every recorded external resource before retry", a
     });
     const reserved = await conductor.reservePreparedAttempt(contract.jobId);
     const manifest = await conductor.getAttempt(reserved.attemptId);
-    await store.writeAttempt({
-      ...manifest,
+    const claimed = await claimAttemptForTest(store, manifest);
+    const preparing = await store.transitionAttempt(claimed, {
+      status: "preparing",
+    });
+    await store.transitionAttempt(preparing, {
       status: "running",
       guardian: {
         schema: "conductor.process-guardian/v1",
@@ -226,9 +230,9 @@ test("manual retry releases durable resources and fails closed when cleanup fail
       idempotencyKey: "sandbox-manual-retry",
     });
     const reserved = await conductor.reservePreparedAttempt(first.item.jobId);
-    let manifest = await conductor.getAttempt(reserved.attemptId);
-    manifest = {
-      ...manifest,
+    const manifest = await conductor.getAttempt(reserved.attemptId);
+    const claimed = await claimAttemptForTest(store, manifest);
+    await store.transitionAttempt(claimed, {
       status: "failed",
       finishedAt: new Date().toISOString(),
       verificationStatus: "ineligible",
@@ -243,11 +247,17 @@ test("manual retry releases durable resources and fails closed when cleanup fail
           dataRoot,
         ),
       ],
-    };
-    await store.writeAttempt(manifest);
-    await queue.update(first.item, {
-      status: "failed",
+    });
+    const firstDispatching = await queue.update(first.item, {
+      status: "dispatching",
+      dispatchOperationId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    });
+    const firstRunning = await queue.update(firstDispatching, {
+      status: "running",
       attemptId: reserved.attemptId,
+    });
+    await queue.update(firstRunning, {
+      status: "failed",
     });
 
     const retried = await dispatcher.retry(first.item.jobId);
@@ -269,8 +279,8 @@ test("manual retry releases durable resources and fails closed when cleanup fail
       second.item.jobId,
     );
     const secondManifest = await conductor.getAttempt(secondReserved.attemptId);
-    await store.writeAttempt({
-      ...secondManifest,
+    const secondClaimed = await claimAttemptForTest(store, secondManifest);
+    await store.transitionAttempt(secondClaimed, {
       status: "failed",
       finishedAt: new Date().toISOString(),
       verificationStatus: "ineligible",
@@ -283,9 +293,16 @@ test("manual retry releases durable resources and fails closed when cleanup fail
         ),
       ],
     });
-    await queue.update(second.item, {
-      status: "failed",
+    const secondDispatching = await queue.update(second.item, {
+      status: "dispatching",
+      dispatchOperationId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    });
+    const secondRunning = await queue.update(secondDispatching, {
+      status: "running",
       attemptId: secondReserved.attemptId,
+    });
+    await queue.update(secondRunning, {
+      status: "failed",
     });
 
     await expect(dispatcher.retry(second.item.jobId)).rejects.toThrow(
@@ -322,7 +339,7 @@ test("automatic workspace cleanup retains evidence when external cleanup is unpr
   );
 
   try {
-    const result = await conductor.runJob({
+    const result = await runTestJob(conductor, {
       objective: "Retain the worktree if named-resource cleanup cannot finish",
       repositoryPath: repository.root,
       adapterId: "sandbox-fixture",
@@ -349,6 +366,21 @@ test("automatic workspace cleanup retains evidence when external cleanup is unpr
     await rm(dataRoot, { recursive: true, force: true });
   }
 });
+
+async function claimAttemptForTest(
+  store: ArtifactStore,
+  manifest: AttemptManifest,
+): Promise<AttemptManifest> {
+  return store.transitionAttempt(manifest, {
+    status: "claimed",
+    dispatchOperationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    launchOwner: {
+      instanceId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      processId: process.pid,
+      claimedAt: new Date().toISOString(),
+    },
+  });
+}
 
 class SandboxFixtureAdapter implements WorkerAdapter {
   readonly description;

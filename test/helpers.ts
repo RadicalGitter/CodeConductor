@@ -1,7 +1,13 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+
+import {
+  type Conductor,
+  type RunJobResult,
+} from "../src/orchestrator/conductor.js";
 
 export async function createTestRepository(): Promise<{
   root: string;
@@ -45,4 +51,24 @@ export function command(
       else reject(new Error(`${executable} exited ${code}: ${stderr.trim()}`));
     });
   });
+}
+
+export async function runTestJob(
+  conductor: Conductor,
+  input: unknown,
+): Promise<RunJobResult> {
+  const contract = await conductor.prepareJob(input);
+  const existing = await conductor.store.latestAttempt(contract.jobId);
+  if (existing) {
+    const replay = await conductor.waitForAttempt(existing.attemptId);
+    return { ...replay, idempotentReplay: true };
+  }
+  const dispatchOperationId = randomUUID();
+  const reserved = await conductor.reservePreparedAttempt(
+    contract.jobId,
+    [],
+    dispatchOperationId,
+  );
+  await conductor.startReservedAttempt(reserved.attemptId, dispatchOperationId);
+  return conductor.waitForAttempt(reserved.attemptId);
 }

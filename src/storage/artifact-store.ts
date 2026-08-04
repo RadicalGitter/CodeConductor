@@ -14,9 +14,16 @@ import {
   attemptManifestSchema,
   createReservedAttempt,
   type AttemptManifest,
+  type AttemptStatus,
   type ProposalLineage,
 } from "../contracts/attempt.js";
 import { jobContractSchema, type JobContract } from "../contracts/job.js";
+import {
+  commitTransition,
+  readLatestTransition,
+  TransitionConflictError,
+  type TransitionFailpoint,
+} from "./transitions.js";
 
 export class IdempotencyConflictError extends Error {
   constructor(jobId: string) {
@@ -36,7 +43,12 @@ export interface AttemptReservation {
 export class ArtifactStore {
   readonly root: string;
 
-  constructor(root: string) {
+  constructor(
+    root: string,
+    private readonly options: {
+      transitionFailpoint?: TransitionFailpoint;
+    } = {},
+  ) {
     this.root = path.resolve(root);
   }
 
@@ -82,6 +94,7 @@ export class ArtifactStore {
   async reserveAttempt(
     contract: JobContract,
     lineage?: ProposalLineage,
+    dispatchOperationId?: string,
   ): Promise<AttemptReservation> {
     const attemptsRoot = this.attemptsRoot(contract.jobId);
     await mkdir(attemptsRoot, { recursive: true });
@@ -91,6 +104,7 @@ export class ArtifactStore {
         contract,
         ordinal,
         lineage,
+        dispatchOperationId,
       );
       if (reservation.created) return reservation;
     }
@@ -100,26 +114,79 @@ export class ArtifactStore {
 
   async reserveInitialAttempt(
     contract: JobContract,
+    dispatchOperationId?: string,
   ): Promise<AttemptReservation> {
     await mkdir(this.attemptsRoot(contract.jobId), { recursive: true });
-    return this.reserveAttemptAt(contract, 1);
+    return this.reserveAttemptAt(contract, 1, undefined, dispatchOperationId);
   }
 
-  async writeAttempt(manifest: AttemptManifest): Promise<void> {
-    const parsed = attemptManifestSchema.parse(manifest);
-    await this.writeJsonAtomic(
-      this.attemptManifestPath(parsed.jobId, parsed.attemptId),
-      parsed,
-    );
+  async transitionAttempt(
+    expected: AttemptManifest,
+    patch: Partial<AttemptManifest>,
+  ): Promise<AttemptManifest> {
+    const current = await this.readAttempt(expected.jobId, expected.attemptId);
+    if (
+      current.revision !== expected.revision ||
+      JSON.stringify(current) !== JSON.stringify(expected)
+    ) {
+      throw new TransitionConflictError(
+        "attempt",
+        expected.attemptId,
+        expected.revision,
+        current.revision,
+      );
+    }
+    const updated = attemptManifestSchema.parse({
+      ...current,
+      ...patch,
+      schema: "conductor.attempt/v2",
+      attemptId: current.attemptId,
+      jobId: current.jobId,
+      revision: current.revision + 1,
+    });
+    assertAttemptTransition(current.status, updated.status);
+    await commitTransition({
+      recordKind: "attempt",
+      recordId: current.attemptId,
+      expectedRevision: current.revision,
+      value: updated,
+      transitionsRoot: this.attemptTransitionsRoot(
+        current.jobId,
+        current.attemptId,
+      ),
+      snapshotName: "attempt.json",
+      projectionPath: this.attemptManifestPath(
+        current.jobId,
+        current.attemptId,
+      ),
+      writeJsonAtomic: (target, value) => this.writeJsonAtomic(target, value),
+      failpoint: this.options.transitionFailpoint,
+    });
+    return updated;
   }
 
   async readAttempt(
     jobId: string,
     attemptId: string,
   ): Promise<AttemptManifest> {
-    return attemptManifestSchema.parse(
+    const projection = attemptManifestSchema.parse(
       await this.readJson(this.attemptManifestPath(jobId, attemptId)),
     );
+    const latest = await readLatestTransition({
+      recordKind: "attempt",
+      recordId: attemptId,
+      transitionsRoot: this.attemptTransitionsRoot(jobId, attemptId),
+      snapshotName: "attempt.json",
+      parse: (value) => attemptManifestSchema.parse(value),
+      revisionOf: (value) => value.revision,
+    });
+    if (!latest) return projection;
+    if (latest.revision < projection.revision) {
+      throw new Error(
+        `Attempt ${attemptId} projection revision ${projection.revision} is ahead of its transition journal ${latest.revision}`,
+      );
+    }
+    return latest;
   }
 
   async findAttempt(attemptId: string): Promise<AttemptManifest> {
@@ -143,6 +210,39 @@ export class ArtifactStore {
       .sort()
       .at(-1);
     return latest ? this.readAttempt(jobId, latest) : undefined;
+  }
+
+  async listAttempts(): Promise<AttemptManifest[]> {
+    await this.initialize();
+    const jobs = await readdir(this.jobsRoot(), { withFileTypes: true });
+    const attempts: AttemptManifest[] = [];
+    for (const job of jobs) {
+      if (!job.isDirectory() || job.name.includes(".reserve-")) continue;
+      let entries;
+      try {
+        entries = await readdir(this.attemptsRoot(job.name), {
+          withFileTypes: true,
+        });
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          "code" in error &&
+          error.code === "ENOENT"
+        )
+          continue;
+        throw error;
+      }
+      for (const attempt of entries) {
+        if (!attempt.isDirectory() || attempt.name.includes(".reserve-"))
+          continue;
+        attempts.push(await this.readAttempt(job.name, attempt.name));
+      }
+    }
+    return attempts.sort(
+      (left, right) =>
+        left.createdAt.localeCompare(right.createdAt) ||
+        left.attemptId.localeCompare(right.attemptId),
+    );
   }
 
   async writeJsonAtomic(target: string, value: unknown): Promise<void> {
@@ -184,6 +284,10 @@ export class ArtifactStore {
     return path.join(this.attemptDirectory(jobId, attemptId), "attempt.json");
   }
 
+  attemptTransitionsRoot(jobId: string, attemptId: string): string {
+    return path.join(this.attemptDirectory(jobId, attemptId), "transitions");
+  }
+
   workspaceRoot(): string {
     return path.join(this.root, "workspaces");
   }
@@ -204,6 +308,7 @@ export class ArtifactStore {
     contract: JobContract,
     ordinal: number,
     lineage?: ProposalLineage,
+    dispatchOperationId?: string,
   ): Promise<AttemptReservation> {
     const attemptId = `${contract.jobId}_a${ordinal.toString().padStart(4, "0")}`;
     const directory = this.attemptDirectory(contract.jobId, attemptId);
@@ -226,6 +331,7 @@ export class ArtifactStore {
         verification: path.join(directory, "verification.json"),
       },
       lineage,
+      dispatchOperationId,
     });
     try {
       await this.writeJsonAtomic(
@@ -243,6 +349,27 @@ export class ArtifactStore {
         created: false,
       };
     }
+  }
+}
+
+const allowedAttemptTransitions: Record<AttemptStatus, AttemptStatus[]> = {
+  reserved: ["reserved", "claimed", "cancelled"],
+  claimed: ["claimed", "preparing", "cancelled", "failed"],
+  preparing: ["preparing", "running", "needs-input", "failed", "cancelled"],
+  running: ["running", "verifying", "failed", "cancelled"],
+  verifying: ["verifying", "completed", "failed", "cancelled"],
+  completed: ["completed", "failed"],
+  failed: ["failed"],
+  "needs-input": ["needs-input"],
+  cancelled: ["cancelled"],
+};
+
+function assertAttemptTransition(
+  current: AttemptStatus,
+  next: AttemptStatus,
+): void {
+  if (!allowedAttemptTransitions[current].includes(next)) {
+    throw new Error(`Illegal attempt transition: ${current} -> ${next}`);
   }
 }
 

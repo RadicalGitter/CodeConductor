@@ -144,10 +144,11 @@ try {
       arguments: conductorArguments,
     }),
   );
-  conductorAttemptId = String(submitted.attemptId);
+  const submittedItem = submitted.item as Record<string, unknown>;
+  conductorAttemptId = String(submittedItem.attemptId);
   assert(
-    submitted.status === "reserved",
-    "Conductor submission was not asynchronous",
+    ["running", "completed"].includes(String(submittedItem.status)),
+    "Conductor submission did not pass through the durable dispatcher",
   );
   const conductorResult = textJson(
     await conductorClient.callTool({
