@@ -1,103 +1,155 @@
-# Conductor
+# CodingConductor
 
-Conductor is a standalone orchestration runtime for producing reviewable coding
-work with local or frontier agents. It is the control plane around coding
-harnesses, not another coding model and not a fork of one harness.
+Durable orchestration and review evidence for coding agents.
+
+CodingConductor contains **Conductor**, a provider-neutral control plane that
+turns bounded coding contracts into isolated, reviewable proposals. It is not a
+coding model and it does not replace Kode, Codex, Claude Code, or another
+harness. It coordinates them while keeping repository authority, deterministic
+verification, and final acceptance outside the worker.
+
+> **Status:** experimental and private. The current runtime is suitable for
+> attended trials with trusted repositories and adapters. It is not yet cleared
+> for overnight unattended operation; the open gates are tracked explicitly in
+> the [hardening register](docs/hardening-register.md).
+
+## Why Conductor exists
+
+Powerful coding agents still need durable answers to ordinary operational
+questions:
+
+- What exact revision and contract did the worker receive?
+- Which files and commands was it authorized to touch?
+- Can two useful jobs run concurrently without sharing mutable state?
+- Did the worker finish, did the deterministic checks pass, and are those two
+  claims kept distinct?
+- Can a reviewer reconstruct the proposal after restart or workspace cleanup?
+- When something fails, does the evidence explain whether to retry, quarantine,
+  reject, or ask for a decision?
+
+Conductor makes those questions the runtime's responsibility rather than asking
+an agent transcript to serve as proof.
 
 ```text
-owner / premium architect
+owner / architect
         |
         v
-versioned job contract
+approved design + versioned job contract
         |
         v
-Conductor: policy -> worktree -> process -> evidence -> checks -> review packet
+Conductor
+  policy -> isolated worktree -> worker -> evidence -> checks -> review packet
         |
         +-- Kode adapter
         +-- Codex adapter
-        +-- future Claude Code and other adapters
+        +-- future harness adapters
 ```
 
-The first compatibility target is the durable delegate behavior proven in the
-RadicalGitter Kode fork at revision `328676d`. Conductor reimplements that
-contract independently so Kode remains an optional external backend rather than
-the owner of orchestration.
+## What exists today
 
-## Current status
+- Exact-revision Git worktrees and proposal-only patches.
+- Kode and Codex worker adapters.
+- Non-blocking job submission, polling, cancellation, and bounded parallel
+  queueing.
+- Dependency graphs with hash-bound proposal ancestry.
+- Atomic job and attempt manifests.
+- Positive path scope, protected paths, setup cleanliness, and acceptance
+  command evidence.
+- Bounded artifact retrieval and proposal review packets.
+- A generation-fenced single-host dispatcher lease.
+- Guarded subprocesses and durable external-resource records.
+- A digest-pinned Docker verification lane that fails closed when its configured
+  security floor is not met.
+- A stdio MCP surface for architect and harness integrations.
 
-The independent bootstrap, durable-worker slice, and deterministic verification
-slice are implemented. Conductor currently provides Kode and Codex adapters,
-asynchronous submission, polling, guarded subprocesses, exact-revision Git
-worktrees, atomic job/attempt manifests, proposal patches, setup evidence,
-path-scope enforcement, acceptance-command evidence, and a stdio MCP server.
-It also has a durable single-owner queue with bounded parallelism, dependency
-gates, compact completion records, generation-fenced local leases, and
-hash-bound proposal-only dependency composition. A digest-pinned external
-Docker verifier lane is implemented, but it fails closed on outdated engines
-and is not presented as a hostile-agent VM boundary.
+The implementation has also been adversarially reviewed. Duplicate dispatch
+claims, crash-window recovery, complete process-tree ownership, evidence
+sealing, and resource ceilings remain open before unattended use. The README,
+runtime contract, and operations guide deliberately do not hide that boundary.
 
-An Ultra review of commit `5bf3cf2` reopened unattended readiness: duplicate
-attempt claims, incomplete descendant cleanup, crash-window lease/recovery
-dead ends, incomplete evidence revalidation, and unbounded artifacts must be
-fixed before overnight operation. Current use is an attended pilot with trusted
-repositories and adapters. See the
-[Vesserin backend generation plan](docs/vesserin-backend-generation-plan.md)
-and its [unattended hardening register](docs/hardening-register.md).
+## What Conductor does not do
+
+- It does not treat worker completion as semantic acceptance.
+- It does not merge or mutate a canonical branch automatically.
+- It does not let model-facing callers choose arbitrary repositories,
+  executables, sandboxes, secrets, or budgets.
+- It does not use same-worker self-review as independent evidence.
+- Its current Docker verifier is not presented as a hostile-agent VM boundary.
+
+Workers produce proposals. Deterministic policy establishes mechanical
+eligibility. A project owner or authoritative reviewer decides what becomes
+accepted repository state.
+
+## Quick start
+
+Prerequisites: [Bun](https://bun.sh/) and Git. Node-compatible production
+artifacts remain a goal, while development and tests use Bun.
 
 ```powershell
 bun install
 bun run check
+bun run doctor
 bun run start:mcp
 ```
 
-Runtime data defaults to `~/.conductor`. Configure it with
-`CONDUCTOR_DATA_DIR`; configure adapter executables with
-`CONDUCTOR_KODE_BIN` and `CONDUCTOR_CODEX_BIN`.
+Runtime data defaults to `~/.conductor`. Common owner-side configuration:
 
-The MCP process starts the dispatcher automatically. Configure capacity with
-`CONDUCTOR_MAX_CONCURRENT` (default `1`), polling with
-`CONDUCTOR_POLL_INTERVAL_MS`, and the single-machine ownership lease with
-`CONDUCTOR_LEASE_MS`. Use `enqueue_coding_job` for unattended work and
-`submit_coding_job` only for the immediate fire-and-poll compatibility lane.
+| Setting                           | Purpose                                                |
+| --------------------------------- | ------------------------------------------------------ |
+| `CONDUCTOR_DATA_DIR`              | Durable jobs, attempts, queue state, and evidence      |
+| `CONDUCTOR_KODE_BIN`              | Trusted Kode launcher                                  |
+| `CONDUCTOR_CODEX_BIN`             | Trusted Codex launcher                                 |
+| `CONDUCTOR_MAX_CONCURRENT`        | Dispatcher capacity; default `1`                       |
+| `CONDUCTOR_POLL_INTERVAL_MS`      | Queue polling interval                                 |
+| `CONDUCTOR_LEASE_MS`              | Single-host dispatcher lease duration                  |
+| `CONDUCTOR_WORKER_ENV_ALLOWLIST`  | Environment names workers may inherit                  |
+| `CONDUCTOR_COMMAND_ALLOWLIST`     | Absolute executables allowed for owner-authored checks |
+| `CONDUCTOR_COMMAND_ENV_ALLOWLIST` | Environment names checks may inherit                   |
 
-To bind directly to a compiled Kode fork without an installed launcher, set
-`CONDUCTOR_KODE_ENTRY` to its JavaScript entry and optionally
-`CONDUCTOR_KODE_NODE_BIN` to the Node executable. The entry is passed as an
-argument; Conductor never imports Kode packages.
+To bind a compiled Kode fork directly, set `CONDUCTOR_KODE_ENTRY` and optionally
+`CONDUCTOR_KODE_NODE_BIN`. Conductor passes the entry as an argument and never
+imports Kode packages.
 
-Worker subprocesses inherit a minimal operating-system environment. Add
-explicit names with `CONDUCTOR_WORKER_ENV_ALLOWLIST`. Setup and acceptance
-commands require absolute executable paths that also appear in the owner-side
-`CONDUCTOR_COMMAND_ALLOWLIST`; their named environment dependencies must appear
-in `CONDUCTOR_COMMAND_ENV_ALLOWLIST`. Lists are comma-separated. Command values
-and secret values are never accepted into the frozen job contract.
+Kode runs with its safe host-worktree policy. Permission bypass is not a job
+option; stronger authority belongs only inside a future external or microVM
+execution boundary.
 
-Kode uses `--safe` in this host-worktree executor. Permission bypass is not a
-job option or environment switch; it belongs only in a future stronger
-external/VM executor where the host boundary remains intact.
+## First product workflow
 
-See [the architecture](docs/architecture.md),
-[runtime contract](docs/runtime-contract.md),
-[parity map](docs/parity-map.md), [verification](docs/verification.md), and
-[roadmap](docs/roadmap.md). Decisions intentionally reserved for stronger
-review are tracked in [the Extra High register](docs/extra-high-review.md).
-The in-code contract syntax and automatic watch behavior are documented in
-[source contracts](docs/source-contracts.md). The concrete local-model setup,
-doctor, lifecycle, recovery, live evidence, and semantic-review handoff are in
-[unattended operations](docs/operations.md).
+The first nontrivial target is Vesserin's **Observation Projection v0**: an
+actor-safe view and legal-action projection, a structurally separate overhead
+diagnostic view, and deterministic package assembly. The workflow is designed
+to test whether local workers can produce most bounded implementation work
+without spending premium attention on supervision or weakening review.
 
-## Important current boundary
+The complete approach, diagnostics plan, controlled experiments, and go/no-go
+gates are in the
+[Vesserin backend generation plan](docs/vesserin-backend-generation-plan.md).
 
-Worktrees isolate proposals from the primary checkout; they do not isolate a
-host from hostile generated code. `completed` means that the worker process
-completed, while `verificationStatus=eligible` means deterministic preparation,
-scope, and acceptance gates also passed. Neither status semantically accepts or
-merges the proposal.
+## Documentation
 
-External Docker verification adds a materially stronger bounded command lane,
-with digest, version, network, secret, capability, resource, and cleanup gates.
-Truly hostile autonomous execution remains reserved for the planned microVM
-private-clone backend.
+- [Architecture and authority model](docs/architecture.md)
+- [Runtime contract](docs/runtime-contract.md)
+- [Operations and recovery](docs/operations.md)
+- [Verification model](docs/verification.md)
+- [Source-authored contracts](docs/source-contracts.md)
+- [Behavior parity map](docs/parity-map.md)
+- [Roadmap](docs/roadmap.md)
+- [Unattended hardening register](docs/hardening-register.md)
+- [Extra High review register](docs/extra-high-review.md)
+
+## Repository layout
+
+```text
+src/contracts/      versioned job, attempt, queue, and evidence schemas
+src/orchestrator/   proposal orchestration and compatibility entry points
+src/queue/          durable scheduling, leases, and recovery
+src/runtime/        processes, worktrees, executables, and external resources
+src/verification/   scope, command, and eligibility checks
+src/mcp/            bounded MCP tools
+scripts/            doctor, qualification, and live canaries
+test/               contract, race, recovery, and integration evidence
+```
 
 ## Licensing
 
