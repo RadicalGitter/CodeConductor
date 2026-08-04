@@ -107,6 +107,7 @@ test("worker output cannot spoof the guardian control channel", async () => {
 test("cancellation terminates descendants, not only the direct worker", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "conductor-tree-"));
   const canary = path.join(root, "survived.txt");
+  const cleanupCanary = path.join(root, "cleaned.txt");
   const fixture = fileURLToPath(
     new URL("./fixtures/child-tree.ts", import.meta.url),
   );
@@ -118,6 +119,14 @@ test("cancellation terminates descendants, not only the direct worker", async ()
         executable: process.execPath,
         args: [fixture, canary],
         cwd: root,
+        cleanup: {
+          executable: process.execPath,
+          args: [
+            "-e",
+            `require("node:fs").writeFileSync(${JSON.stringify(cleanupCanary)}, "cleaned")`,
+          ],
+          cwd: root,
+        },
       },
       {
         stdoutPath: path.join(root, "stdout.log"),
@@ -132,10 +141,46 @@ test("cancellation terminates descendants, not only the direct worker", async ()
     expect(result.cancelled).toBe(true);
     await Bun.sleep(1_000);
     expect(await exists(canary)).toBe(false);
+    expect(await exists(cleanupCanary)).toBe(true);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-});
+}, 10_000);
+
+test("timed-out external cleanup is tree-terminated before failure returns", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "conductor-cleanup-tree-"));
+  const canary = path.join(root, "cleanup-descendant-survived.txt");
+  const fixture = fileURLToPath(
+    new URL("./fixtures/child-tree.ts", import.meta.url),
+  );
+
+  try {
+    await expect(
+      runProcess(
+        {
+          executable: process.execPath,
+          args: ["-e", "process.exit(0)"],
+          cwd: root,
+          cleanup: {
+            executable: process.execPath,
+            args: [fixture, canary],
+            cwd: os.tmpdir(),
+            timeoutMs: 200,
+          },
+        },
+        {
+          stdoutPath: path.join(root, "stdout.log"),
+          stderrPath: path.join(root, "stderr.log"),
+          timeoutMs: 5_000,
+        },
+      ),
+    ).rejects.toThrow("External resource cleanup timed out");
+    await Bun.sleep(1_200);
+    expect(await exists(canary)).toBe(false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 10_000);
 
 test("guardian ownership-pipe closure kills descendants after owner crash", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "conductor-orphan-"));

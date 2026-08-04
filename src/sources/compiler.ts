@@ -120,6 +120,7 @@ export class ContractSourceCompiler {
       acceptanceCommands: this.profiles.resolve(contract.acceptance),
       timeoutMs: contract.timeoutMs,
       retainWorkspace: contract.retainWorkspace,
+      executionBoundary: contract.executionBoundary,
       idempotencyKey: `source_${compiled.fingerprint}`,
     };
   }

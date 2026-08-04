@@ -1,0 +1,16 @@
+{
+  "schema": "conductor.sandbox-profiles/v1",
+  "dockerExecutable": "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe",
+  "profiles": {
+    "escape-canary": {
+      "image": "busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662",
+      "minimumEngineVersion": "29.6.2",
+      "allowedExecutables": ["/bin/sh"],
+      "user": "65532:65532",
+      "memoryBytes": 268435456,
+      "cpus": 1,
+      "pidsLimit": 64,
+      "tmpfsBytes": 67108864
+    }
+  }
+}

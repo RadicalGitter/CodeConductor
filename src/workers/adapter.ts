@@ -9,6 +9,7 @@ export interface WorkerAdapterDescription {
   outputFormat: "jsonl" | "text";
   safetyMode: string;
   available: boolean;
+  hostExecution?: "file-edit-only" | "command-capable";
 }
 
 export interface WorkerAdapter {

@@ -149,3 +149,39 @@ same full live chain in 17.5 seconds and added an untruncated, SHA-256-bound
 review packet. `bun run smoke:runtime-mcp` separately launched the real stdio
 entrypoint with the local runtime configuration, discovered 20 tools, confirmed
 the Kode adapter, queried queue and watch state, and shut down cleanly.
+
+## Extra High hardening and composition
+
+The standalone suite now has 34 tests and 210 assertions. New adversarial
+evidence covers:
+
+- generation-fenced local leases whose stale owners cannot release successors;
+- suspend-safe refusal to steal an expired lease from a live process;
+- guardian ownership-pipe process-tree termination after owner crash;
+- separation of nonce-bound guardian events from spoofable worker logs;
+- durable external-resource cleanup before orphan retry;
+- fail-closed manual retry when terminal-attempt resource cleanup fails;
+- refusal to remove a workspace while its external resource is unproven;
+- automatic retention of cleanup evidence and cwd after cleanup failure;
+- tree termination of a hung external cleanup before failure returns;
+- three-level hash-bound proposal ancestry and deterministic reconstruction;
+- rejection of altered parent evidence before child execution;
+- quarantine of conflicting sibling proposals without running the child;
+- child scope and patch measurement from the derived proposal baseline;
+- digest-pinned external Docker invocation policy and refusal of host
+  command-capable adapters.
+
+## External-sandbox canary
+
+The canary uses official BusyBox 1.36.1 at digest
+`sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662`.
+Its isolation probes passed: host-root write blocked, outbound network blocked,
+host secret absent, host Docker socket absent, UID 65532, zero effective Linux
+capabilities, forced cancellation recorded, and both named containers removed.
+
+The authoritative overall result remains failure, preserved at
+`C:\Users\oscar\.conductor\runtime\canaries\sandbox-2026-08-04T12-00-17.479Z`:
+Docker Desktop 4.54.0 exposes Engine 29.1.2, below the profile's 29.6.2 security
+floor. `bun run doctor` independently reports every Kode/model/command check as
+passing and only `sandbox-escape-canary` as failing. This is a deployment block,
+not a failed isolation probe and not permission to lower the floor.

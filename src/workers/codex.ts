@@ -27,6 +27,7 @@ export class CodexAdapter implements WorkerAdapter {
       outputFormat: "jsonl" as const,
       safetyMode: "codex-workspace-write",
       available: this.executable !== undefined,
+      hostExecution: "command-capable" as const,
     };
   }
 

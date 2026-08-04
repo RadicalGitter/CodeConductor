@@ -95,3 +95,8 @@ Vesserin concepts inside core packages.
 
 Disposable VM workers, immutable verifier VMs, inference broker, artifact
 import boundary, evolutionary engine lineages, and deliberate escape tests.
+
+**State:** bounded container-verifier scaffold implemented and fail-closed on
+the currently outdated Docker engine. Hypervisor-backed microVM execution,
+private-clone import, and immutable verifier separation remain required before
+hostile autonomous gameplay execution.

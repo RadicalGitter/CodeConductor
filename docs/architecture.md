@@ -82,8 +82,21 @@ distributed-filesystem lease.
 
 The host executor provides worktree isolation and conservative subprocess
 modes. It protects the primary checkout but is not a hostile-code sandbox.
-Later VM execution will implement the stronger boundary required for
-autonomous generated-code experiments.
+
+An external-sandbox job may use only a host adapter declared file-edit-only;
+all setup and acceptance commands are converted to a frozen owner profile. The
+current Docker driver requires a digest-pinned image, minimum engine version,
+non-root user, read-only root, zero Linux capabilities, no-new-privileges,
+default seccomp, no network, no inherited environment, bounded memory/CPU/PIDs,
+and one read-write worktree mount. Container command paths have their own
+allowlist. Named resources and exact cleanup invocations are persisted before
+start; normal completion/cancellation removes them, and orphan recovery must
+remove or prove them absent before retry.
+
+This container tier is a bounded generated-code verifier, not the final
+hostile-agent boundary. Full autonomy requires a current hypervisor-backed
+microVM executor with a read-only source mount/private clone, no shared skills,
+deny-by-default network, immutable evaluator, and validated artifact import.
 
 Allowed, forbidden, and protected paths are checked independently of worker
 prose. Setup and acceptance commands use typed executable-plus-argument arrays,

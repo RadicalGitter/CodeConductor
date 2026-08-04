@@ -60,9 +60,34 @@ reconstruct it exactly.
 
 ## Hostile generated-code execution
 
-Worktrees protect the primary checkout, not the host. Setup, workers, and test
-commands can still consume host resources or exploit their permitted process.
-Before enabling generated-code execution from gameplay wishes without human
-review, specify the disposable VM boundary, immutable verifier, mount and
-network policy, secret absence, resource ceilings, artifact import validation,
-and escape canaries.
+**Outcome: container verifier implemented; hostile autonomy remains gated.**
+External jobs now freeze an owner-side, digest-pinned Docker profile. Only
+file-edit-only host workers qualify. Container commands have no inherited host
+environment, no network, a read-only root, non-root UID, zero capabilities,
+no-new-privileges, Docker's default seccomp policy, bounded CPU/memory/PIDs, a
+bounded tmpfs, and only the proposal worktree mounted read-write. Container
+paths are independently allowlisted. Named resources and cleanup commands are
+persisted; cancellation removes them and restart recovery cannot retry until
+cleanup succeeds or absence is proven.
+
+The real canary passed root-write, network, secret, Docker-socket, UID,
+capability, cancellation, and leftover-container probes. The complete result is
+still **not ready**: Docker Desktop 4.54.0 / Engine 29.1.2 is below the required
+29.6.2 security floor. External job preparation and `doctor` fail closed.
+
+Residual kill gate: ordinary containers share the Linux VM kernel and mount the
+worktree read-write. They are appropriate for bounded verifier commands after a
+Docker update, not arbitrary hostile agents. Before enabling the self-directed
+gameplay wish loop, implement a hypervisor-backed microVM driver—preferably
+Docker Sandboxes in `--clone` mode—with no shared skills, locked-down network,
+an immutable evaluator, artifact schema/hash/size validation, and deliberate
+VM escape/import canaries. This is a real authority and deployment boundary,
+not an instruction-level invariant.
+
+Primary references for this boundary are Docker's documentation for
+[container run isolation options](https://docs.docker.com/reference/cli/docker/container/run/),
+[the default seccomp profile](https://docs.docker.com/engine/security/seccomp/),
+[Engine 29 security releases](https://docs.docker.com/engine/release-notes/29/),
+and the separate Docker Sandboxes
+[security](https://docs.docker.com/ai/sandboxes/security/) and
+[isolation](https://docs.docker.com/ai/sandboxes/security/isolation/) model.

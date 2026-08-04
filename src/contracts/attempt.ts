@@ -52,6 +52,25 @@ export const proposalLineageSchema = z.object({
 export type ProposalContribution = z.infer<typeof proposalContributionSchema>;
 export type ProposalLineage = z.infer<typeof proposalLineageSchema>;
 
+export const externalResourceSchema = z.object({
+  schema: z.literal("conductor.external-resource/v1"),
+  resourceId: z.string().regex(/^[a-zA-Z0-9_.-]+$/),
+  driver: z.literal("docker"),
+  profileId: z.string().min(1),
+  profileFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  image: z.string().min(1),
+  status: z.enum(["active", "released"]),
+  registeredAt: z.string().datetime(),
+  releasedAt: z.string().datetime().optional(),
+  cleanup: z.object({
+    executable: z.string().min(1),
+    args: z.array(z.string()),
+    cwd: z.string().min(1),
+  }),
+});
+
+export type ExternalResource = z.infer<typeof externalResourceSchema>;
+
 export const failureKindSchema = z.enum([
   "invalid-job",
   "adapter-unavailable",
@@ -86,6 +105,7 @@ export const attemptManifestSchema = z.object({
     .optional(),
   guardian: processGuardianIdentitySchema.optional(),
   lineage: proposalLineageSchema.optional(),
+  externalResources: z.array(externalResourceSchema).default([]),
   invocation: z
     .object({
       executable: z.string().min(1),

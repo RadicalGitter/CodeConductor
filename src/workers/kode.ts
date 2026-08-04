@@ -39,6 +39,7 @@ export class KodeAdapter implements WorkerAdapter {
       outputFormat: "jsonl" as const,
       safetyMode: "kode-safe-accept-edits",
       available: this.executable !== undefined && this.entryAvailable,
+      hostExecution: "file-edit-only" as const,
     };
   }
 

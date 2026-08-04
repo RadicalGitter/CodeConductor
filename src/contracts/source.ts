@@ -28,6 +28,7 @@ export const sourceContractSchema = z.object({
   acceptance: z.array(sourceCommandSchema).min(1),
   timeoutMs: jobRequestSchema.shape.timeoutMs,
   retainWorkspace: jobRequestSchema.shape.retainWorkspace,
+  executionBoundary: jobRequestSchema.shape.executionBoundary,
   dependsOn: z.array(z.string().regex(/^[a-zA-Z0-9_.-]+$/)).default([]),
   priority: z.number().int().min(-100).max(100).default(0),
   enabled: z.boolean().default(true),
@@ -108,8 +109,9 @@ export const commandProfileFileSchema = z.object({
   profiles: z.record(
     z.string().regex(/^[a-zA-Z0-9_.-]+$/),
     z.object({
-      executable: z.string().min(1).refine(path.isAbsolute, {
-        message: "profile executable must be absolute",
+      executable: z.string().min(1).refine(isPortableAbsolute, {
+        message:
+          "profile executable must be an absolute host or container path",
       }),
       argsPrefix: z.array(z.string()).default([]),
       inheritEnv: z
@@ -120,3 +122,10 @@ export const commandProfileFileSchema = z.object({
 });
 
 export type CommandProfileFile = z.infer<typeof commandProfileFileSchema>;
+
+function isPortableAbsolute(value: string): boolean {
+  return (
+    path.posix.isAbsolute(value.replaceAll("\\", "/")) ||
+    path.win32.isAbsolute(value)
+  );
+}

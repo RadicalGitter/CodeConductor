@@ -44,7 +44,6 @@ control.on("data", (chunk) => {
     if (stopping) return;
     send({
       type: "worker-close",
-      nonce: message.nonce,
       exitCode,
       signal,
     });
@@ -71,7 +70,9 @@ async function stop(reason) {
 }
 
 function send(value) {
-  process.stdout.write(`${EVENT_PREFIX}${JSON.stringify(value)}\n`);
+  process.stdout.write(
+    `${EVENT_PREFIX}${JSON.stringify({ ...value, nonce: expectedNonce })}\n`,
+  );
 }
 
 function finish(exitCode) {

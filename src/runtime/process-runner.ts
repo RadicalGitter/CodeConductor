@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, open } from "node:fs/promises";
+import { mkdir, open, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
@@ -13,6 +13,14 @@ export interface ProcessInvocation {
   args: string[];
   cwd: string;
   env?: Record<string, string>;
+  cleanup?: {
+    executable: string;
+    args: string[];
+    cwd: string;
+    env?: Record<string, string>;
+    allowMissingMessage?: string;
+    timeoutMs?: number;
+  };
 }
 
 export interface ProcessGuardianIdentity {
@@ -178,6 +186,9 @@ export async function runProcess(
         });
       });
       await termination;
+      if (invocation.cleanup) {
+        await runCleanupInvocation(invocation.cleanup);
+      }
       return { ...result, timedOut, cancelled };
     } finally {
       clearTimeout(timeout);
@@ -271,6 +282,54 @@ export function isProcessAlive(pid: number): boolean {
     return true;
   } catch (error) {
     return error instanceof Error && "code" in error && error.code === "EPERM";
+  }
+}
+
+async function runCleanupInvocation(
+  invocation: NonNullable<ProcessInvocation["cleanup"]>,
+): Promise<void> {
+  const identity = randomUUID();
+  const stdoutPath = path.join(
+    invocation.cwd,
+    `.conductor-cleanup-${identity}.stdout.log`,
+  );
+  const stderrPath = path.join(
+    invocation.cwd,
+    `.conductor-cleanup-${identity}.stderr.log`,
+  );
+  try {
+    const result = await runProcess(
+      {
+        executable: invocation.executable,
+        args: invocation.args,
+        cwd: invocation.cwd,
+        env: invocation.env,
+      },
+      {
+        stdoutPath,
+        stderrPath,
+        timeoutMs: invocation.timeoutMs ?? 30_000,
+      },
+    );
+    const stderr = await readFile(stderrPath, "utf8");
+    if (result.timedOut) {
+      throw new Error("External resource cleanup timed out");
+    }
+    if (result.exitCode === 0) return;
+    if (
+      invocation.allowMissingMessage &&
+      stderr.includes(invocation.allowMissingMessage)
+    ) {
+      return;
+    }
+    throw new Error(
+      `External resource cleanup exited ${result.exitCode}: ${stderr.trim()}`,
+    );
+  } finally {
+    await Promise.allSettled([
+      rm(stdoutPath, { force: true }),
+      rm(stderrPath, { force: true }),
+    ]);
   }
 }
 

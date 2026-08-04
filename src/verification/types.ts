@@ -7,6 +7,21 @@ export const commandEvidenceSchema = z.object({
   index: z.number().int().nonnegative(),
   command: commandSpecSchema,
   resolvedCwd: z.string().min(1),
+  executionBoundary: z
+    .discriminatedUnion("kind", [
+      z.object({ kind: z.literal("host-worktree") }),
+      z.object({
+        kind: z.literal("external-sandbox"),
+        profileId: z.string().min(1),
+        profileFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+        driver: z.literal("docker"),
+        image: z.string().min(1),
+        containerName: z.string().min(1),
+        network: z.literal("none"),
+        readOnlyRoot: z.literal(true),
+      }),
+    ])
+    .default({ kind: "host-worktree" }),
   status: z.enum([
     "passed",
     "failed",

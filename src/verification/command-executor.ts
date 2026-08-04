@@ -1,10 +1,12 @@
 import path from "node:path";
 import { realpath } from "node:fs/promises";
 
-import type { CommandSpec } from "../contracts/job.js";
+import type { CommandSpec, ExecutionBoundary } from "../contracts/job.js";
+import type { ExternalResource } from "../contracts/attempt.js";
 import { selectRequestedEnvironment } from "../runtime/environment.js";
 import { runProcess } from "../runtime/process-runner.js";
 import type { ProcessGuardianIdentity } from "../runtime/process-runner.js";
+import { buildSandboxedCommand } from "../sandbox/docker.js";
 import type { CommandEvidence } from "./types.js";
 
 export class ExecutionPolicy {
@@ -81,7 +83,14 @@ export async function executeCommand(input: {
   policy: ExecutionPolicy;
   signal: AbortSignal;
   onGuardianReady?: (identity: ProcessGuardianIdentity) => void | Promise<void>;
+  executionBoundary?: ExecutionBoundary;
+  attemptId?: string;
+  onExternalResource?: (resource: ExternalResource) => void | Promise<void>;
+  onExternalResourceReleased?: (resourceId: string) => void | Promise<void>;
 }): Promise<CommandEvidence> {
+  const executionBoundary = input.executionBoundary ?? {
+    kind: "host-worktree" as const,
+  };
   const lexicalCwd = path.resolve(
     input.workspacePath,
     input.command.cwd ?? ".",
@@ -98,6 +107,10 @@ export async function executeCommand(input: {
       index: input.index,
       command: input.command,
       resolvedCwd: lexicalCwd,
+      executionBoundary:
+        executionBoundary.kind === "host-worktree"
+          ? executionBoundary
+          : sandboxEvidenceWithoutContainer(executionBoundary),
       status: "policy-denied",
       error: error instanceof Error ? error.message : String(error),
     };
@@ -110,40 +123,74 @@ export async function executeCommand(input: {
     index: input.index,
     command: input.command,
     resolvedCwd,
-  } as const;
+  };
 
+  let invocation;
+  let boundaryEvidence: CommandEvidence["executionBoundary"];
   try {
-    input.policy.validate(input.command);
+    if (executionBoundary.kind === "external-sandbox") {
+      const sandboxed = buildSandboxedCommand({
+        boundary: executionBoundary,
+        command: input.command,
+        workspacePath: input.workspacePath,
+        cleanupCwd: input.artifactDirectory,
+        relativeCwd: input.command.cwd,
+        identity: `${input.attemptId ?? "attempt"}-${input.phase}-${input.index}`,
+      });
+      invocation = sandboxed.invocation;
+      boundaryEvidence = sandboxed.evidence;
+      await input.onExternalResource?.(sandboxed.resource);
+    } else {
+      input.policy.validate(input.command);
+      invocation = {
+        executable: input.command.executable,
+        args: input.command.args,
+        cwd: resolvedCwd,
+        env: selectRequestedEnvironment(input.command.inheritEnv),
+      };
+      boundaryEvidence = { kind: "host-worktree" };
+    }
   } catch (error) {
     return {
       ...base,
+      executionBoundary:
+        executionBoundary.kind === "host-worktree"
+          ? executionBoundary
+          : sandboxEvidenceWithoutContainer(executionBoundary),
       status: "policy-denied",
       error: error instanceof Error ? error.message : String(error),
     };
   }
 
   if (input.signal.aborted) {
-    return { ...base, status: "cancelled" };
+    return {
+      ...base,
+      executionBoundary: boundaryEvidence,
+      status: "cancelled",
+    };
   }
 
   try {
-    const process = await runProcess(
-      {
-        executable: input.command.executable,
-        args: input.command.args,
-        cwd: resolvedCwd,
-        env: selectRequestedEnvironment(input.command.inheritEnv),
-      },
-      {
-        stdoutPath: stdout,
-        stderrPath: stderr,
-        timeoutMs: input.command.timeoutMs ?? input.defaultTimeoutMs,
-        signal: input.signal,
-        onGuardianReady: input.onGuardianReady,
-      },
-    );
+    const process = await runProcess(invocation, {
+      stdoutPath: stdout,
+      stderrPath: stderr,
+      timeoutMs: input.command.timeoutMs ?? input.defaultTimeoutMs,
+      signal: input.signal,
+      onGuardianReady: input.onGuardianReady,
+    });
+    if (executionBoundary.kind === "external-sandbox") {
+      await input.onExternalResourceReleased?.(
+        (
+          boundaryEvidence as Extract<
+            CommandEvidence["executionBoundary"],
+            { kind: "external-sandbox" }
+          >
+        ).containerName,
+      );
+    }
     return {
       ...base,
+      executionBoundary: boundaryEvidence,
       status: process.cancelled
         ? "cancelled"
         : process.timedOut
@@ -158,12 +205,28 @@ export async function executeCommand(input: {
   } catch (error) {
     return {
       ...base,
+      executionBoundary: boundaryEvidence!,
       status: "failed",
       stdout,
       stderr,
       error: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+function sandboxEvidenceWithoutContainer(
+  boundary: Extract<ExecutionBoundary, { kind: "external-sandbox" }>,
+): CommandEvidence["executionBoundary"] {
+  return {
+    kind: "external-sandbox",
+    profileId: boundary.profileId,
+    profileFingerprint: boundary.profileFingerprint,
+    driver: "docker",
+    image: boundary.image,
+    containerName: "not-started",
+    network: "none",
+    readOnlyRoot: true,
+  };
 }
 
 export async function resolveInsideWorkspace(

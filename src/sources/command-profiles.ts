@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import path from "node:path";
 
 import type { CommandSpec } from "../contracts/job.js";
 import {
@@ -41,7 +42,9 @@ export class CommandProfiles {
   executablePaths(): string[] {
     return [
       ...new Set(
-        Object.values(this.profiles).map((profile) => profile.executable),
+        Object.values(this.profiles)
+          .map((profile) => profile.executable)
+          .filter(path.isAbsolute),
       ),
     ];
   }

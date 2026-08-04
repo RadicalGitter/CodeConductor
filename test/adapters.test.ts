@@ -23,10 +23,9 @@ const contract = freezeJobRequest(
 );
 
 test("Kode defaults to safe unattended edits without permission bypass", () => {
-  const invocation = new KodeAdapter(process.execPath).buildInvocation(
-    contract,
-    "Z:\\workspace",
-  );
+  const adapter = new KodeAdapter(process.execPath);
+  const invocation = adapter.buildInvocation(contract, "Z:\\workspace");
+  expect(adapter.description.hostExecution).toBe("file-edit-only");
   expect(invocation.executable).toBe(process.execPath);
   expect(invocation.args).toContain("--safe");
   expect(invocation.args).toContain("acceptEdits");
@@ -87,10 +86,9 @@ test("Kode can launch a compiled fork through an explicit interpreter and entry"
 });
 
 test("Codex stays in workspace-write and accepts only bounded adapter options", () => {
-  const invocation = new CodexAdapter(process.execPath).buildInvocation(
-    contract,
-    "Z:\\workspace",
-  );
+  const adapter = new CodexAdapter(process.execPath);
+  const invocation = adapter.buildInvocation(contract, "Z:\\workspace");
+  expect(adapter.description.hostExecution).toBe("command-capable");
   expect(invocation.args).toContain("workspace-write");
   expect(invocation.args).toContain("test-model");
   expect(invocation.args).toContain("test-profile");

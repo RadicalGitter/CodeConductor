@@ -11,6 +11,11 @@ It never merges into the project checkout.
 2. Copy `config/command-profiles.example.json` to the ignored
    `config/command-profiles.local.json`. Keep only absolute executables that the
    owner intentionally allows as setup or acceptance commands.
+   If using the external verifier, also copy
+   `config/sandbox-profiles.example.json` to the ignored
+   `config/sandbox-profiles.local.json`, set
+   `CONDUCTOR_SANDBOX_PROFILES_FILE`, and replace the canary-only profile with
+   the project's reviewed digest-pinned verifier image.
 3. With the intended llama.cpp-compatible server running, create a dedicated
    Kode profile:
 
@@ -29,6 +34,7 @@ It never merges into the project checkout.
    bun run doctor
    bun run smoke:runtime-mcp
    bun run smoke:kode-live
+   bun run smoke:sandbox
    bun run check
    ```
 
@@ -36,6 +42,28 @@ The doctor fails closed when Kode is unavailable, its dedicated config is not
 explicitly inherited, thinking/high effort is absent, the configured model is
 not the model currently served, the runtime data directory cannot initialize,
 or no owner-side command profile is available. It never prints API keys.
+
+## External generated-code verifier
+
+The Docker profile is an owner boundary, not a job payload. It binds an exact
+image digest and minimum engine version and never pulls implicitly. The current
+escape canary uses official BusyBox only to exercise isolation; it is not a
+Vesserin verifier image. It checks blocked root writes, blocked network, absent
+host secrets, absent Docker socket, non-root UID, zero effective capabilities,
+forced cancellation, named cleanup, and no leftover containers.
+
+On 2026-08-04, all isolation and cleanup probes passed, but deployment readiness
+correctly failed: installed Docker Desktop 4.54.0 exposes Engine 29.1.2, below
+the configured 29.6.2 floor. Evidence is under
+`C:\Users\oscar\.conductor\runtime\canaries\sandbox-2026-08-04T12-00-17.479Z`.
+`doctor` and external-job preparation therefore fail closed until Docker is
+updated. Do not lower the version floor to turn the result green.
+
+For the later gameplay wish loop, prefer Docker Sandboxes or another microVM
+backend in private-clone mode with shared skills disabled and locked-down
+network policy. The ordinary container driver is suitable for bounded verifier
+commands after the update; it is not authority to run an adversarial autonomous
+agent or import arbitrary artifacts.
 
 ## Start and stop
 

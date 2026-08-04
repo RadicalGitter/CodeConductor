@@ -156,6 +156,7 @@ export class DurableDispatcher {
             `Attempt ${item.attemptId} is still ${attempt.status}; retry would duplicate active work`,
           );
         }
+        await this.conductor.releaseAttemptExternalResources(item.attemptId);
       }
       return this.queue.update(item, {
         status: "queued",

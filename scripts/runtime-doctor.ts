@@ -24,6 +24,26 @@ try {
     kode?.available ? `available at ${kode.executable}` : "unavailable",
   );
   record("data-directory", true, runtime.conductor.store.root);
+  const sandboxes = runtime.conductor.sandboxProfiles.list();
+  record(
+    "sandbox-profiles",
+    true,
+    sandboxes.length
+      ? sandboxes.map((binding) => binding.profileId).join(", ")
+      : "no external sandbox profiles configured",
+  );
+  for (const binding of sandboxes) {
+    try {
+      await runtime.conductor.sandboxProfiles.verify(binding);
+      record(
+        `sandbox-${binding.profileId}`,
+        true,
+        `${binding.image}; Docker >= ${binding.minimumEngineVersion}`,
+      );
+    } catch (error) {
+      record(`sandbox-${binding.profileId}`, false, errorMessage(error));
+    }
+  }
 } catch (error) {
   record("runtime-construction", false, errorMessage(error));
 }

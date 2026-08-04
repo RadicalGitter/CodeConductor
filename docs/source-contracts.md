@@ -26,6 +26,10 @@ ignored. The body is strict JSON and the end marker closes the record.
   "acceptance": [
     { "profile": "gameplay-focused", "args": ["damage.test.ts"] }
   ],
+  "executionBoundary": {
+    "kind": "external-sandbox",
+    "profileId": "generated-code-verifier"
+  },
   "dependsOn": ["combat.attack-roll"],
   "priority": 10
 }
@@ -58,6 +62,12 @@ JSON file outside the project contract:
 
 Resolved commands still pass the normal shell-free execution policy. Profile
 values are not persisted in the source-authored contract.
+
+For an external sandbox, command profiles use absolute paths inside the image
+(for example `/usr/local/bin/node`) instead of host executable paths. The owner
+sandbox profile separately binds the Docker executable, image digest, runtime
+floor, resource ceilings, and allowed container executables. Source comments
+can name that profile but cannot define or widen it.
 
 ## Discovery and watches
 

@@ -17,6 +17,43 @@ export const commandSpecSchema = z.object({
 
 export type CommandSpec = z.infer<typeof commandSpecSchema>;
 
+export const executionBoundaryRequestSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("host-worktree") }),
+  z.object({
+    kind: z.literal("external-sandbox"),
+    profileId: z.string().regex(/^[a-zA-Z0-9_.-]+$/),
+  }),
+]);
+
+export const externalSandboxBindingSchema = z.object({
+  kind: z.literal("external-sandbox"),
+  schema: z.literal("conductor.external-sandbox-binding/v1"),
+  profileId: z.string().regex(/^[a-zA-Z0-9_.-]+$/),
+  profileFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  driver: z.literal("docker"),
+  dockerExecutable: z.string().min(1).refine(path.isAbsolute),
+  image: z.string().regex(/^.+@sha256:[a-f0-9]{64}$/),
+  minimumEngineVersion: z.string().regex(/^\d+\.\d+\.\d+$/),
+  allowedExecutables: z.array(z.string().regex(/^\//)).min(1).max(64),
+  user: z.string().regex(/^\d+:\d+$/),
+  workspaceMount: z.literal("/workspace"),
+  network: z.literal("none"),
+  readOnlyRoot: z.literal(true),
+  capDropAll: z.literal(true),
+  noNewPrivileges: z.literal(true),
+  memoryBytes: z.number().int().min(67_108_864).max(68_719_476_736),
+  cpus: z.number().min(0.1).max(64),
+  pidsLimit: z.number().int().min(16).max(4096),
+  tmpfsBytes: z.number().int().min(1_048_576).max(8_589_934_592),
+});
+
+export const executionBoundaryContractSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("host-worktree") }),
+  externalSandboxBindingSchema,
+]);
+
+export type ExecutionBoundary = z.infer<typeof executionBoundaryContractSchema>;
+
 export const jobRequestSchema = z.object({
   objective: z.string().min(1),
   taskClass: z
@@ -44,6 +81,9 @@ export const jobRequestSchema = z.object({
   acceptanceCommands: z.array(commandSpecSchema).default([]),
   timeoutMs: z.number().int().positive().max(86_400_000).default(3_600_000),
   retainWorkspace: z.boolean().default(true),
+  executionBoundary: executionBoundaryRequestSchema.default({
+    kind: "host-worktree",
+  }),
   idempotencyKey: z.string().min(1).max(200).optional(),
 });
 
@@ -75,6 +115,9 @@ export const jobContractSchema = z.object({
   execution: z.object({
     timeoutMs: z.number().int().positive(),
     retainWorkspace: z.boolean(),
+    boundary: executionBoundaryContractSchema.default({
+      kind: "host-worktree",
+    }),
   }),
   authority: z.literal("proposal-only"),
 });
@@ -86,6 +129,7 @@ export interface FreezeJobRequestOptions {
   baseRevision: string;
   now?: Date;
   generatedId?: string;
+  sandboxBinding?: z.infer<typeof externalSandboxBindingSchema>;
 }
 
 export function freezeJobRequest(
@@ -97,6 +141,20 @@ export function freezeJobRequest(
   const idempotencyKey =
     request.idempotencyKey ?? options.generatedId ?? randomUUID();
   const jobId = `job_${shortHash(idempotencyKey)}`;
+  const boundary =
+    request.executionBoundary.kind === "external-sandbox"
+      ? options.sandboxBinding
+      : { kind: "host-worktree" as const };
+  if (
+    request.executionBoundary.kind === "external-sandbox" &&
+    (!boundary ||
+      boundary.kind !== "external-sandbox" ||
+      boundary.profileId !== request.executionBoundary.profileId)
+  ) {
+    throw new Error(
+      `External sandbox profile was not resolved: ${request.executionBoundary.profileId}`,
+    );
+  }
 
   return jobContractSchema.parse({
     schema: "conductor.job/v1",
@@ -124,6 +182,7 @@ export function freezeJobRequest(
     execution: {
       timeoutMs: request.timeoutMs,
       retainWorkspace: request.retainWorkspace,
+      boundary,
     },
     authority: "proposal-only",
   });

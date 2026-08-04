@@ -93,6 +93,17 @@ without a shell, from real paths inside the worktree, using absolute
 owner-allowlisted executables and owner-allowlisted inherited environment
 names.
 
+`executionBoundary.kind=external-sandbox` names an owner profile which is
+resolved and frozen into the job. Preparation fails unless the Docker engine
+meets the profile's security floor and the exact digest-pinned image is already
+present; images are never pulled implicitly. Host command-capable worker
+adapters are rejected. Container commands receive no host environment values
+and can use only profile-allowlisted absolute container paths. Verification
+records include the profile fingerprint, image, container name, and boundary.
+Active external resources are durable attempt state, and a retry is prohibited
+until cleanup succeeds or Docker proves the container absent. The same gate
+prevents removal of the resource's worktree and cleanup working directory.
+
 ## Restart semantics
 
 Completed manifests, queue items, and artifacts survive process restart. One

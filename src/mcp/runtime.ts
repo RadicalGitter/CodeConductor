@@ -13,6 +13,7 @@ import { ContractSourceCompiler } from "../sources/compiler.js";
 import { ContractSourceService } from "../sources/service.js";
 import { ContractSourcePoller } from "../sources/poller.js";
 import { SourceWatchStore } from "../sources/watch-store.js";
+import { SandboxProfiles } from "../sandbox/docker.js";
 
 export function createConductorFromEnvironment(): Conductor {
   return createConductorRuntimeFromEnvironment().conductor;
@@ -31,6 +32,7 @@ export function createConductorRuntimeFromEnvironment(): {
   );
   const store = new ArtifactStore(dataRoot);
   const profiles = CommandProfiles.fromEnvironment();
+  const sandboxProfiles = SandboxProfiles.fromEnvironment();
   const conductor = new Conductor(
     store,
     new GitWorkspaceManager(store.workspaceRoot()),
@@ -39,6 +41,7 @@ export function createConductorRuntimeFromEnvironment(): {
       allowedExecutables: profiles.executablePaths(),
       allowedEnvironmentNames: profiles.environmentNames(),
     }),
+    sandboxProfiles,
   );
   const queue = new QueueStore(store);
   const dispatcher = new DurableDispatcher(conductor, queue, {

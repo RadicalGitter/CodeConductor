@@ -33,7 +33,9 @@ path-scope enforcement, acceptance-command evidence, and a stdio MCP server.
 It also has a durable single-owner queue with bounded parallelism, dependency
 gates, compact completion records, generation-fenced local leases, guarded
 process trees, safe same-host restart recovery, and hash-bound proposal-only
-dependency composition.
+dependency composition. A digest-pinned external Docker verifier lane is also
+implemented, but it fails closed on outdated engines and is not presented as a
+hostile-agent VM boundary.
 
 ```powershell
 bun install
@@ -84,6 +86,11 @@ host from hostile generated code. `completed` means that the worker process
 completed, while `verificationStatus=eligible` means deterministic preparation,
 scope, and acceptance gates also passed. Neither status semantically accepts or
 merges the proposal.
+
+External Docker verification adds a materially stronger bounded command lane,
+with digest, version, network, secret, capability, resource, and cleanup gates.
+Truly hostile autonomous execution remains reserved for the planned microVM
+private-clone backend.
 
 ## Licensing
 

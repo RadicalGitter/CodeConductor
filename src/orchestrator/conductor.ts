@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   proposalLineageSchema,
   type AttemptManifest,
+  type ExternalResource,
   type ProposalContribution,
   type ProposalLineage,
 } from "../contracts/attempt.js";
@@ -20,6 +21,7 @@ import {
   type ProcessGuardianIdentity,
 } from "../runtime/process-runner.js";
 import { selectParentEnvironment } from "../runtime/environment.js";
+import { SandboxProfiles, validateSandboxCommand } from "../sandbox/docker.js";
 import {
   buildReviewPacket,
   reviewPacketSchema,
@@ -74,6 +76,7 @@ export class Conductor {
     readonly workspaces: GitWorkspaceManager,
     readonly workers: WorkerRegistry,
     readonly executionPolicy = new ExecutionPolicy(),
+    readonly sandboxProfiles = new SandboxProfiles(),
   ) {}
 
   async prepareJob(input: unknown): Promise<JobContract> {
@@ -82,6 +85,24 @@ export class Conductor {
     if (!requestedAdapter.description.available) {
       throw new Error(`Worker adapter is not available: ${request.adapterId}`);
     }
+    const sandboxBinding =
+      request.executionBoundary.kind === "external-sandbox"
+        ? this.sandboxProfiles.resolve(request.executionBoundary.profileId)
+        : undefined;
+    if (sandboxBinding) {
+      await this.sandboxProfiles.verify(sandboxBinding);
+      if (requestedAdapter.description.hostExecution !== "file-edit-only") {
+        throw new Error(
+          `External sandbox jobs require a file-edit-only host adapter: ${request.adapterId}`,
+        );
+      }
+      for (const command of [
+        ...request.setupCommands,
+        ...request.acceptanceCommands,
+      ]) {
+        validateSandboxCommand(sandboxBinding, command);
+      }
+    }
     const repository = await this.workspaces.inspectRepository(
       request.repositoryPath,
       request.baseRef,
@@ -89,6 +110,7 @@ export class Conductor {
     const candidate = freezeJobRequest(request, {
       repositoryRoot: repository.root,
       baseRevision: repository.revision,
+      sandboxBinding,
     });
     const reservation = await this.store.reserveJob(candidate);
     return reservation.contract;
@@ -146,6 +168,9 @@ export class Conductor {
       throw new Error(`Attempt ${attemptId} is already executing`);
     }
     const contract = await this.store.readJob(manifest.jobId);
+    if (contract.execution.boundary.kind === "external-sandbox") {
+      await this.sandboxProfiles.verify(contract.execution.boundary);
+    }
     const adapter = this.workers.get(contract.worker.adapterId);
     if (!adapter.description.available) {
       throw new Error(
@@ -463,6 +488,11 @@ export class Conductor {
         return { disposition: "still-running", manifest };
       }
     }
+    const cleanup = await this.cleanupExternalResources(manifest);
+    manifest = cleanup.manifest;
+    if (!cleanup.safe) {
+      return { disposition: "unknown", manifest };
+    }
     manifest = await this.update(manifest, {
       status: "failed",
       finishedAt: new Date().toISOString(),
@@ -476,8 +506,26 @@ export class Conductor {
     return { disposition: "safe-to-retry", manifest };
   }
 
-  async removeAttemptWorkspace(attemptId: string): Promise<AttemptManifest> {
+  async releaseAttemptExternalResources(
+    attemptId: string,
+  ): Promise<AttemptManifest> {
     const manifest = await this.getAttempt(attemptId);
+    if (!isAttemptTerminal(manifest.status)) {
+      throw new Error(
+        `Attempt ${attemptId} is still ${manifest.status}; its external resources may still be in use`,
+      );
+    }
+    const cleanup = await this.cleanupExternalResources(manifest);
+    if (!cleanup.safe) {
+      throw new Error(
+        `Attempt ${attemptId} still owns an external resource; retry or workspace removal is prohibited`,
+      );
+    }
+    return cleanup.manifest;
+  }
+
+  async removeAttemptWorkspace(attemptId: string): Promise<AttemptManifest> {
+    let manifest = await this.getAttempt(attemptId);
     if (
       ["reserved", "preparing", "running", "verifying"].includes(
         manifest.status,
@@ -487,6 +535,7 @@ export class Conductor {
         `Cannot remove workspace for active attempt ${attemptId}`,
       );
     }
+    manifest = await this.releaseAttemptExternalResources(attemptId);
     if (!manifest.workspace || !manifest.workspace.retained) return manifest;
 
     const contract = await this.store.readJob(manifest.jobId);
@@ -603,8 +652,16 @@ export class Conductor {
           defaultTimeoutMs: contract.execution.timeoutMs,
           policy: this.executionPolicy,
           signal: abortController.signal,
+          executionBoundary: contract.execution.boundary,
+          attemptId: manifest.attemptId,
           onGuardianReady: async (identity) => {
             manifest = await this.update(manifest, { guardian: identity });
+          },
+          onExternalResource: async (resource) => {
+            manifest = await this.registerExternalResource(manifest, resource);
+          },
+          onExternalResourceReleased: async (resourceId) => {
+            manifest = await this.releaseExternalResource(manifest, resourceId);
           },
         });
         const repositoryClean =
@@ -788,8 +845,22 @@ export class Conductor {
             defaultTimeoutMs: contract.execution.timeoutMs,
             policy: this.executionPolicy,
             signal: abortController.signal,
+            executionBoundary: contract.execution.boundary,
+            attemptId: manifest.attemptId,
             onGuardianReady: async (identity) => {
               manifest = await this.update(manifest, { guardian: identity });
+            },
+            onExternalResource: async (resource) => {
+              manifest = await this.registerExternalResource(
+                manifest,
+                resource,
+              );
+            },
+            onExternalResourceReleased: async (resourceId) => {
+              manifest = await this.releaseExternalResource(
+                manifest,
+                resourceId,
+              );
             },
           });
           const finalPatch = await captureCurrentPatch(workspace);
@@ -854,6 +925,13 @@ export class Conductor {
     } finally {
       if (workspace && !contract.execution.retainWorkspace) {
         try {
+          const externalCleanup = await this.cleanupExternalResources(manifest);
+          manifest = externalCleanup.manifest;
+          if (!externalCleanup.safe) {
+            throw new Error(
+              "External resource cleanup failed; its worktree must remain available",
+            );
+          }
           await this.workspaces.remove(workspace);
           manifest = await this.update(manifest, {
             workspace: { ...manifest.workspace!, retained: false },
@@ -888,6 +966,73 @@ export class Conductor {
       updatedAt: new Date().toISOString(),
     });
     await this.store.writeJsonAtomic(manifest.artifacts.verification, updated);
+  }
+
+  private async registerExternalResource(
+    manifest: AttemptManifest,
+    resource: ExternalResource,
+  ): Promise<AttemptManifest> {
+    const existing = manifest.externalResources.filter(
+      (entry) => entry.resourceId !== resource.resourceId,
+    );
+    return this.update(manifest, {
+      externalResources: [...existing, resource],
+    });
+  }
+
+  private async releaseExternalResource(
+    manifest: AttemptManifest,
+    resourceId: string,
+  ): Promise<AttemptManifest> {
+    return this.update(manifest, {
+      externalResources: manifest.externalResources.map((entry) =>
+        entry.resourceId === resourceId
+          ? {
+              ...entry,
+              status: "released" as const,
+              releasedAt: new Date().toISOString(),
+            }
+          : entry,
+      ),
+    });
+  }
+
+  private async cleanupExternalResources(
+    initialManifest: AttemptManifest,
+  ): Promise<{ manifest: AttemptManifest; safe: boolean }> {
+    let manifest = initialManifest;
+    for (const resource of manifest.externalResources) {
+      if (resource.status !== "active") continue;
+      const prefix = path.join(
+        path.dirname(manifest.artifacts.manifest),
+        `recovery-${resource.resourceId}`,
+      );
+      try {
+        const result = await runProcess(
+          {
+            executable: resource.cleanup.executable,
+            args: resource.cleanup.args,
+            cwd: resource.cleanup.cwd,
+          },
+          {
+            stdoutPath: `${prefix}.stdout.log`,
+            stderrPath: `${prefix}.stderr.log`,
+            timeoutMs: 30_000,
+          },
+        );
+        const stderr = await readFile(`${prefix}.stderr.log`, "utf8");
+        if (result.exitCode !== 0 && !/No such container/i.test(stderr)) {
+          return { manifest, safe: false };
+        }
+        manifest = await this.releaseExternalResource(
+          manifest,
+          resource.resourceId,
+        );
+      } catch {
+        return { manifest, safe: false };
+      }
+    }
+    return { manifest, safe: true };
   }
 
   private async update(
@@ -987,6 +1132,10 @@ async function runCommandSequence(input: {
   policy: ExecutionPolicy;
   signal: AbortSignal;
   onGuardianReady?: (identity: ProcessGuardianIdentity) => void | Promise<void>;
+  onExternalResource?: (resource: ExternalResource) => void | Promise<void>;
+  onExternalResourceReleased?: (resourceId: string) => void | Promise<void>;
+  executionBoundary: JobContract["execution"]["boundary"];
+  attemptId: string;
 }): Promise<CommandEvidence[]> {
   const evidence: CommandEvidence[] = [];
   for (const [index, command] of input.commands.entries()) {
@@ -1000,6 +1149,10 @@ async function runCommandSequence(input: {
       policy: input.policy,
       signal: input.signal,
       onGuardianReady: input.onGuardianReady,
+      executionBoundary: input.executionBoundary,
+      attemptId: input.attemptId,
+      onExternalResource: input.onExternalResource,
+      onExternalResourceReleased: input.onExternalResourceReleased,
     });
     evidence.push(result);
     if (result.status !== "passed") break;
