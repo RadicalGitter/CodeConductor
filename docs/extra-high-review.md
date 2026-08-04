@@ -9,9 +9,11 @@ widen them.
 > lease repair, and the supported Windows process/cleanup boundary were later
 > closed by the revisions named in their sections. Schema-readable
 > queue/attempt convergence was closed by `1a3f908`, and review-evidence
-> binding by `657f0ca`. Resource ceilings remain open; no individual closure is
-> a claim of unattended readiness. The remaining corrective gates live in
-> `vesserin-backend-generation-plan.md`.
+> binding by `657f0ca`. Resource and retention closure followed in `2af6717`
+> for the exercised trusted-repository Windows lane. No individual closure
+> widens that profile into POSIX support, hostile-agent containment, or the
+> still-failing Vesserin Docker qualification. The remaining environment and
+> product-pilot gates live in `vesserin-backend-generation-plan.md`.
 
 ## Orphan process recovery
 

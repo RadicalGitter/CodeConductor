@@ -88,7 +88,12 @@ schema-readable state with evidence-bound public actions, exhaustive
 status-pair classification, and mutation-before-result crash replay. Malformed
 whole-record bytes remain blocked rather than reconstructed. UNC roots remain
 rejected; cross-machine and network-filesystem dispatch remain unsupported.
-Review evidence and resource ceilings remain separate unattended gates.
+Review evidence and resource/retention ceilings are now closed by `657f0ca` and
+`2af6717` for the exercised trusted-repository Windows lane. Exact log and patch
+caps, monitored worktree/artifact ceilings, total attempt deadlines, bounded
+Git, frozen-profile cleanup, retry limits, disk reserve, and owner-approved GC
+are implemented. The Vesserin Docker qualification and POSIX cgroup lane remain
+separate environment/platform exits.
 
 ## Slice 5 — independent semantic review
 

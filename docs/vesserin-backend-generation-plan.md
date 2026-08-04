@@ -312,17 +312,22 @@ Exit evidence:
 - no active resource survives beyond its declared cleanup deadline without an
   actionable health finding.
 
-Progress on `caae1c8`, `726e1cf`, `3afab31`, and `77c2b54`: the supported
+Progress on `caae1c8`, `726e1cf`, `3afab31`, `77c2b54`, and `2af6717`: the supported
 Windows lane now places commands in a verified kill-on-close Job before launch
 and proves normal-exit, cancellation, timeout, and owner-crash closure for
 detached Node and Bun descendants. Cleanup subjects, deadlines, and observations
 are durable and independent of terminal worker outcome; unresolved cleanup
 blocks queue success, retry, and worktree removal. Worktree remove/prune commands
 are bounded and Job-owned. HARD-003 is closed for this Windows profile and
-HARD-004 is closed. Phase 2 remains open for trusted/config-isolated bounds on
-every internal Git operation, total-attempt and artifact quotas, retention/GC,
-profile-reconstructed external cleanup, Docker qualification, and a cgroup-
-backed POSIX lane.
+HARD-004 and HARD-008 are closed for the exercised trusted-repository Windows
+profile. Every runtime Git path is resolved, config/hook isolated,
+noninteractive, output/time bounded, and terminates its tree on failure. V2 jobs
+freeze owner budgets; attempt/output/patch/artifact/worktree/retry/lineage/disk
+limits, profile-reconstructed cleanup, and two-stage evidence-bound GC are
+implemented and negatively tested. Phase 2 remains open only for the recorded
+Docker engine qualification and a cgroup-backed POSIX lane. Host-worktree byte
+ceilings remain monitored termination thresholds rather than filesystem quotas;
+the untrusted-code lane therefore still requires bounded-volume isolation.
 
 ### Phase 3 — eligibility and evidence sealing
 

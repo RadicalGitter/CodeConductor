@@ -5,7 +5,7 @@
 - Result: HARD-001 and HARD-002 closed at `a84e8fc`; HARD-005 lease repair
   closed separately at `243b0ec`; process/cleanup closure was later recorded in
   the hardening register; HARD-006 was later closed by `1a3f908`, while
-  HARD-007 was later closed by `657f0ca`, while HARD-008 remains open
+  HARD-007 was later closed by `657f0ca`; HARD-008 followed at `2af6717`
 
 The test harness terminates a fresh dispatcher process at each named boundary,
 waits for its dead-owner lease to expire, and starts a new dispatcher over the

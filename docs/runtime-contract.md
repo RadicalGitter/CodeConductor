@@ -1,8 +1,9 @@
 # Runtime contract
 
-- Status: implemented local core; remaining unattended gates tracked
+- Status: HARD-001 through HARD-008 closed for the exercised trusted-repository
+  Windows lane; broader environment and platform gates tracked
 - MCP contract version: `v1`
-- Queue and attempt record version: `v2` (`v1` remains readable)
+- Job, queue, and attempt record version: `v2` (`v1` remains readable)
 
 ## MCP surface
 
@@ -31,6 +32,8 @@
 | `wait_for_attempt`            | Waits only while this process owns the attempt; otherwise reads it  |
 | `cancel_attempt`              | Cancels the worker and its subprocess tree                          |
 | `remove_attempt_workspace`    | Removes the exact recorded worktree of a terminal attempt           |
+| `get_resource_policy`         | Reads owner limits frozen into newly prepared jobs                  |
+| `plan_retention_gc`           | Classifies retention and returns a short-lived dry-run plan         |
 
 Submission is intentionally non-blocking. Both submission tools enter the same
 durable queue; `submit_coding_job` is the compatibility form with default
@@ -57,6 +60,7 @@ may execute concurrently; each mutating attempt has its own worktree.
       changed-paths.json
       verification.json
       review-packet.json
+      gc-tombstone.json
       setup-*.stdout.log / setup-*.stderr.log
       acceptance-*.stdout.log / acceptance-*.stderr.log
   workspaces/<attempt-id>/
@@ -72,6 +76,7 @@ may execute concurrently; each mutating attempt has its own worktree.
       result.json
   source-runs/<run-id>/manifest.json
   source-watches/<watch-id>/watch.json
+  gc/actions/<plan-id>.json
 ```
 
 Job and attempt reservations become visible through atomic directory renames
@@ -82,6 +87,27 @@ if the process stops before projection. A stale writer cannot overwrite a newer
 revision. Existing v1 records without `revision` read as revision zero and are
 upgraded to the v2 record schema on their next transition. Newly reserved
 attempts and queue items are v2.
+
+New jobs are `conductor.job/v2`. They freeze a fingerprinted
+`conductor.resource-budget/v1` derived from owner configuration. The caller may
+request a shorter total timeout but cannot supply or widen the budget. Reads
+verify its fingerprint. Attempt and queue v1 compatibility remains additive;
+legacy jobs receive the conservative built-in profile when parsed.
+
+Resource enforcement covers the complete setup/worker/acceptance deadline,
+command count, attempts and automatic retry count, changed paths, patch and log
+bytes, total artifact and worktree size, lineage, external resources, Git and
+cleanup timeouts, and disk reserve. Exact output sinks cap logs and patches;
+directory ceilings are monitored during execution and checked at phase
+boundaries. Budget failures are terminal, ineligible `resource-limit` evidence.
+Internal Git uses a resolved executable with noninteractive isolated config,
+disabled hooks, bounded output/time, cancellation, and tree termination.
+
+Retention classification and GC are proposal-first. Active, reviewable, and
+cleanup-quarantined attempts cannot become candidates. Apply is not exposed to
+MCP: the local owner approves one exact fingerprinted plan, and every state and
+file binding is revalidated before mutation. An approved action is persisted
+before deletion; restart diagnostics surface interrupted actions.
 
 Before launch, an attempt also records a `worker-execution-profile/v1` with the
 adapter policy, requested model selector, exact invocation fingerprint, and

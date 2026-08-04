@@ -8,10 +8,11 @@ coding model and it does not replace Kode, Codex, Claude Code, or another
 harness. It coordinates them while keeping repository authority, deterministic
 verification, and final acceptance outside the worker.
 
-> **Status:** experimental and private. The current runtime is suitable for
-> attended trials with trusted repositories and adapters. It is not yet cleared
-> for overnight unattended operation; the open gates are tracked explicitly in
-> the [hardening register](docs/hardening-register.md).
+> **Status:** experimental and private. The generic HARD-001 through HARD-008
+> gates are closed for the exercised trusted-repository Windows lane. Overnight
+> use still requires the exact machine/worker/profile qualification; the
+> Vesserin external-verifier lane remains blocked by its recorded Docker version
+> canary, and POSIX containment is not qualified.
 
 ## Why Conductor exists
 
@@ -66,6 +67,11 @@ Conductor
   normal-exit descendant cleanup and owner-crash closure.
 - Independent durable cleanup requirements and observations for process trees,
   external resources, and workspaces.
+- Owner-controlled resource budgets frozen into v2 jobs, exact log/patch caps,
+  total attempt deadlines, bounded Git, retry and disk ceilings, and
+  frozen-profile external cleanup.
+- Evidence-bound retention classification plus owner-only two-stage garbage
+  collection with dry-run, action audit, and compact tombstones.
 - A digest-pinned Docker verification lane that fails closed when its configured
   security floor is not met.
 - A stdio MCP surface for architect and harness integrations.
@@ -78,10 +84,11 @@ the supported PowerShell 7 Windows lane; legacy and POSIX-only containment fail
 closed. Schema-readable queue/attempt convergence is also closed through typed,
 evidence-bound actions with crash-safe replay, and complete review-evidence
 sealing now fails closed on every bound mutation or inventory change. Resource
-ceilings and the other explicitly named roadmap exits remain open before
-unattended use. Malformed whole-record state stays blocked rather than being
+and retention closure now passes for the exercised Windows lane, with the
+sampled host-worktree ceiling explicitly distinguished from byte-exact log and
+patch caps. Malformed whole-record state stays blocked rather than being
 guessed. The README, runtime contract, and operations guide deliberately do not
-hide that boundary.
+hide the remaining platform and environment gates.
 
 ## What Conductor does not do
 
@@ -107,6 +114,7 @@ bun install
 bun run check
 bun run doctor
 bun run reconcile --dry-run
+bun run gc --dry-run
 bun run start:mcp
 ```
 
@@ -123,6 +131,7 @@ Runtime data defaults to `~/.conductor`. Common owner-side configuration:
 | `CONDUCTOR_WORKER_ENV_ALLOWLIST`  | Environment names workers may inherit                  |
 | `CONDUCTOR_COMMAND_ALLOWLIST`     | Absolute executables allowed for owner-authored checks |
 | `CONDUCTOR_COMMAND_ENV_ALLOWLIST` | Environment names checks may inherit                   |
+| `CONDUCTOR_RESOURCE_PROFILE_FILE` | Owner limits and retention policy frozen into new jobs |
 
 To bind a compiled Kode fork directly, set `CONDUCTOR_KODE_ENTRY` and optionally
 `CONDUCTOR_KODE_NODE_BIN`. Conductor passes the entry as an argument and never
@@ -151,6 +160,7 @@ gates are in the
 - [Operations and recovery](docs/operations.md)
 - [Runtime reconciliation state matrix](docs/reconciliation-state-matrix.md)
 - [Review evidence seal](docs/review-evidence-seal.md)
+- [Resource budgets and retention](docs/resource-budgets-and-retention.md)
 - [Verification model](docs/verification.md)
 - [Source-authored contracts](docs/source-contracts.md)
 - [Behavior parity map](docs/parity-map.md)

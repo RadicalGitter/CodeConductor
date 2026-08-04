@@ -196,7 +196,7 @@ update on the exact implementing revision.
 ## HARD-008 — bounded resources and retention
 
 - Severity: P0 for overnight use
-- State: confirmed; open
+- State: closed for the exercised trusted-repository Windows lane by `2af6717`
 - Failure: command count, total attempt time, output, patch, artifacts,
   worktrees, retries, and external resources are not all bounded and reconciled.
 - Required change: owner-profiled quotas, size-aware writes, deliberate
@@ -207,11 +207,42 @@ update on the exact implementing revision.
   become invisible.
 - Closure updates: operations, doctor/status, artifact contracts, and quota
   tests.
+- Closure evidence: `conductor.job/v2` freezes a fingerprinted owner budget;
+  requests may shorten but cannot widen it. One deadline spans setup, worker,
+  and acceptance. Guardian-owned logs and Git patch capture stop at exact byte
+  caps. Commands, attempts, automatic infrastructure retry, changed paths,
+  aggregate artifacts, worktree size, lineage bytes/count, external resources,
+  Git/cleanup time, and free disk are checked or actively monitored. Every
+  internal runtime Git path now resolves the executable, disables hooks and
+  interactive/config inheritance, bounds output and time, and tree-terminates
+  failure paths. External cleanup is reconstructed from the frozen sandbox
+  binding and refuses mutable-command substitution.
+
+  Retention has explicit active, reviewable, retained, quarantine, and expired
+  classes. Dry-run plans bind revisions, hashes, exact paths, sizes, data root,
+  expiry, and a plan fingerprint. Owner-only apply revalidates all candidates,
+  records intent before deletion, reports interrupted actions after restart,
+  removes worktrees and heavy artifacts in separate passes, and preserves
+  compact manifests, cleanup/verification evidence, journals, actions, and
+  tombstones. Negative tests cover output flood, total deadline, oversized
+  proposal, attempt/retry ceilings, stale GC bindings, active/reviewable and
+  cleanup-failed refusal, and frozen-profile cleanup reconstruction. See
+  [resource budgets and retention](resource-budgets-and-retention.md).
+  The complete repository gate passed with 90 tests and 1,180 assertions in
+  256.2 seconds; its test phase took 249.85 seconds.
+
+- Residual boundary: host worktree and aggregate artifact ceilings are sampled
+  termination thresholds, not filesystem quotas, so a writer can overshoot
+  between observations; the independently enforced free-disk reserve bounds
+  operational risk. Exact patch and per-log caps do not have this overshoot.
+  Strict untrusted-code byte isolation requires a bounded virtual disk or
+  filesystem quota. Docker qualification and POSIX cgroup containment remain
+  broader environment/platform gates, not hidden HARD-008 claims.
 
 ## Gate summary
 
-- Attended generic canary: HARD-001 through HARD-007 closed for the exercised
-  lane; HARD-008 enforced at the canary ceilings.
+- Attended generic canary: HARD-001 through HARD-008 closed for the exercised
+  trusted-repository Windows lane.
 - Vesserin leaf canary: all items closed, plus the Vesserin verifier and
   project-profile qualification gates in the governing plan.
 - Overnight trusted proposal production: all items closed under the exact

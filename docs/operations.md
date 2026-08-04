@@ -7,9 +7,11 @@
 > `243b0ec`. Windows process-tree and cleanup closure were closed by `caae1c8`,
 > `726e1cf`, `3afab31`, and `77c2b54`. Schema-readable queue/attempt
 > convergence was closed by `1a3f908`, and review-evidence integrity by
-> `657f0ca`. Resource budgets remain open. Use attended trusted-worker trials
-> only until the remaining hardening exits in
-> `vesserin-backend-generation-plan.md` pass.
+> `657f0ca`. Resource budgets and retention were closed for the exercised
+> trusted-repository Windows lane by `2af6717`. The generic HARD-001 through
+> HARD-008 gates are closed for that exact profile. The Vesserin external
+> verifier remains blocked on its recorded Docker version canary, and POSIX
+> process containment is not an unattended lane.
 
 This run mode watches committed source contracts, queues each newly observed
 revision once, runs bounded workers in isolated worktrees, applies deterministic
@@ -29,6 +31,10 @@ It never merges into the project checkout.
    `config/sandbox-profiles.local.json`, set
    `CONDUCTOR_SANDBOX_PROFILES_FILE`, and replace the canary-only profile with
    the project's reviewed digest-pinned verifier image.
+   Copy `config/resource-profile.example.json` to the ignored
+   `config/resource-profile.local.json`, set
+   `CONDUCTOR_RESOURCE_PROFILE_FILE`, and review every byte, time, retry, disk,
+   and retention limit. Jobs cannot widen this owner profile.
 4. With the intended llama.cpp-compatible server running, create a dedicated
    Kode profile:
 
@@ -54,8 +60,10 @@ It never merges into the project checkout.
 The doctor fails closed when runtime reconciliation reports a blocked issue,
 Kode is unavailable, its dedicated config is not explicitly inherited,
 thinking/high effort is absent, the configured model is not the model currently
-served, the runtime data directory cannot initialize, or no owner-side command
-profile is available. It never prints API keys.
+served, the runtime data directory cannot initialize, disk falls below the
+owner reserve, a GC action was interrupted or failed, or no owner-side command
+profile is available. It reports the current resource profile and dry-run GC
+summary and never prints API keys.
 
 ## External generated-code verifier
 
@@ -217,6 +225,27 @@ bounded and Job-owned. External cleanup uses the frozen owner profile and must
 finish with proven process termination. Queue completion becomes
 `needs-input`, and reconciliation emits `attempt-cleanup-unresolved`, whenever
 cleanup is not `not-required` or `proven`.
+
+Every new v2 job also freezes the complete owner resource budget. One deadline
+spans setup, worker execution, and acceptance; cleanup retains its own bounded
+closure window. Process logs and proposal patches have exact byte caps. Attempt
+artifacts, worktrees, changed paths, command count, attempts, automatic
+infrastructure retries, lineage, external resources, Git operations, and free
+disk are also bounded or actively monitored. `get_resource_policy` shows the
+profile for new jobs; the job artifact remains authority after restart. See
+[resource budgets and retention](resource-budgets-and-retention.md) for the
+exact enforcement and host-worktree overshoot boundary.
+
+Inspect retention without mutation through `plan_retention_gc` or:
+
+```powershell
+bun run gc --dry-run --out .\gc-plan.json
+```
+
+Applying GC is deliberately owner-only and absent from the model-facing MCP
+surface. It requires the exact unexpired plan plus named approval. Worktree and
+artifact reclamation are separate passes, and compact attempt, cleanup,
+verification, transition, action, and tombstone evidence survives deletion.
 
 PowerShell host startup is currently paid for each guarded command and can add
 seconds to short operations, especially cold. Treat timings from a loaded
