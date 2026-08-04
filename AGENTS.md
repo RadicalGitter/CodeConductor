@@ -15,6 +15,18 @@ Conductor's architectural or licensing base.
 3. `docs/parity-map.md` when changing an existing external contract.
 4. `docs/roadmap.md` for sequence and deliberate deferrals.
 
+## Building through Conductor
+
+Use the user-level `$build-with-conductor` skill when an approved feature or
+backend design should become a multi-contract work package, when running or
+reviewing a source-authored contract graph, or when turning a reproducible
+defect into an isolated fix proposal. Keep the procedure in the skill rather
+than expanding this always-loaded file.
+
+For the first Vesserin product package, also read
+`docs/vesserin-backend-generation-plan.md`. The plan is cross-project direction,
+not evidence that its proposed runtime capabilities are already implemented.
+
 ## Invariants
 
 - Persist a versioned job contract before any external side effect.

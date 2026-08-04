@@ -27,15 +27,22 @@ the owner of orchestration.
 
 The independent bootstrap, durable-worker slice, and deterministic verification
 slice are implemented. Conductor currently provides Kode and Codex adapters,
-asynchronous submission, polling, process-tree cancellation, exact-revision Git
+asynchronous submission, polling, guarded subprocesses, exact-revision Git
 worktrees, atomic job/attempt manifests, proposal patches, setup evidence,
 path-scope enforcement, acceptance-command evidence, and a stdio MCP server.
 It also has a durable single-owner queue with bounded parallelism, dependency
-gates, compact completion records, generation-fenced local leases, guarded
-process trees, safe same-host restart recovery, and hash-bound proposal-only
-dependency composition. A digest-pinned external Docker verifier lane is also
-implemented, but it fails closed on outdated engines and is not presented as a
-hostile-agent VM boundary.
+gates, compact completion records, generation-fenced local leases, and
+hash-bound proposal-only dependency composition. A digest-pinned external
+Docker verifier lane is implemented, but it fails closed on outdated engines
+and is not presented as a hostile-agent VM boundary.
+
+An Ultra review of commit `5bf3cf2` reopened unattended readiness: duplicate
+attempt claims, incomplete descendant cleanup, crash-window lease/recovery
+dead ends, incomplete evidence revalidation, and unbounded artifacts must be
+fixed before overnight operation. Current use is an attended pilot with trusted
+repositories and adapters. See the
+[Vesserin backend generation plan](docs/vesserin-backend-generation-plan.md)
+and its [unattended hardening register](docs/hardening-register.md).
 
 ```powershell
 bun install

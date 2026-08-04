@@ -1,5 +1,11 @@
 # Unattended operations
 
+> **Readiness correction:** this is the intended operating procedure, not the
+> current readiness claim. The Ultra review of commit `5bf3cf2` reopened
+> attempt fencing, process-tree closure, lease/recovery, evidence integrity, and
+> resource-budget gates. Use attended trusted-worker trials only until the
+> hardening exits in `vesserin-backend-generation-plan.md` pass.
+
 This run mode watches committed source contracts, queues each newly observed
 revision once, runs bounded workers in isolated worktrees, applies deterministic
 scope and acceptance gates, and leaves eligible patches for independent review.
@@ -107,12 +113,13 @@ number of validated llama.cpp slots; the current local canary uses one worker,
 while the deterministic suite proves concurrency two. Queue state and source
 watches survive process restart. Work that was only queued resumes.
 
-Every external command has a separate process guardian. If Conductor crashes,
-the guardian observes ownership-pipe closure and kills the complete worker
-tree. A replacement dispatcher retries the job as a new attempt only after the
-recorded guardian is gone. A live guardian or missing process identity is
-quarantined as `needs-input`; recovery never kills a bare PID. This favors a
-safe false-positive quarantine over duplicate mutation or PID-reuse damage.
+Every external command has a separate process guardian, and recovery never
+kills a bare recorded PID. Current evidence proves several cancellation and
+owner-crash paths but not complete closure: detached descendants can survive a
+normal root-worker exit, and some live/missing-identity quarantines cannot be
+resolved safely through the public API. Treat guardian disappearance as
+insufficient for unattended retry until the OS-enforced ownership and
+reconciliation campaign passes.
 
 The generation-fenced queue lease is intentionally single-machine. Expired
 heartbeats are not stolen from live local processes, which makes suspend safe.

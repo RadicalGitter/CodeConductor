@@ -1,5 +1,18 @@
 # Roadmap
 
+## Immediate path — reliability reset and first Vesserin package
+
+The Ultra review of commit `5bf3cf2` established that the core is useful but
+not ready for unattended operation. The detailed implementation sequence,
+diagnostic plane, autonomous bug-reporting path, reusable skill, and first real
+product target—Vesserin Observation Projection v0—are defined in
+[the Vesserin backend generation plan](vesserin-backend-generation-plan.md).
+
+The immediate order is lifecycle fencing and recovery, process/resource
+closure, evidence sealing, coherent package handoff, safe control surfaces,
+the Vesserin adapter, then the product pilot. New feature slices do not outrank
+those gates.
+
 ## Slice 0 — independent bootstrap
 
 Private repository, authority contract, parity map, toolchain, no copied Kode
@@ -62,11 +75,14 @@ fan-out, and isolated mutating workers.
 **Exit:** simultaneous work improves accepted throughput without shared mutable
 workspaces or duplicate attempts.
 
-**State:** local-host core implemented. Queue items, dependency gates, bounded
-concurrency, compact completion records, generation-fenced leases, guardian-
-owned process trees, and safe orphan retry are characterized. Live or unknown
-process identity is quarantined. UNC roots are rejected; cross-machine and
-network-filesystem dispatch remain explicitly unsupported.
+**State:** local-host core implemented; exit reopened. Queue items, dependency
+gates, bounded concurrency, compact completion records, and generation-fenced
+lease records exist. The Ultra review confirmed duplicate-start and dispatch
+crash windows, malformed-lease deadlock, nonresolvable quarantine states, and
+surviving descendants after normal worker exit. Live or unknown identity is
+conservatively quarantined, but safe unattended retry is not yet proven. UNC
+roots remain rejected; cross-machine and network-filesystem dispatch remain
+unsupported.
 
 ## Slice 5 — independent semantic review
 
@@ -76,12 +92,14 @@ bounded correction attempts, reviewer ablation metrics, and compact handoff.
 **Exit:** review measurably improves hidden-check survival or is disabled as an
 uneconomic route.
 
-**State:** packet foundation implemented. Eligible terminal attempts can emit
-a durable advisory packet containing the frozen contract, verification,
-changed paths, evidence hashes, and a bounded patch. Patch tampering is detected
-before handoff. No reviewer is invoked and no finding can accept or mutate work;
-reviewer adapters, typed persisted findings, bounded correction, and ablation
-measurement remain future work.
+**State:** packet foundation implemented; evidence-sealing gate reopened.
+Eligible terminal attempts can emit a durable advisory packet containing the
+frozen contract, verification, changed paths, evidence hashes, and a bounded
+patch. Patch tampering is detected, but cached retrieval currently revalidates
+only that patch rather than every bound artifact. No reviewer is invoked and no
+finding can accept or mutate work; complete binding validation, reviewer
+adapters, typed findings, bounded correction, and ablation measurement remain
+future work.
 
 ## Slice 6 — Vesserin plugin
 
@@ -90,6 +108,13 @@ acceptance, wish/run artifacts, and later story-as-instrument evaluation.
 
 **Exit:** useful Vesserin work runs through the generic core without placing
 Vesserin concepts inside core packages.
+
+**First target:** Observation Projection v0 for the existing deterministic
+movement bootstrap. Vesserin first freezes the actor/overhead schemas, test
+oracles, visibility decisions, a premium-authored `party.move` requester
+boundary, and separate protected source contracts; Conductor workers then edit
+dedicated implementation files. The full M2 party-space package follows only
+after Vesserin repairs its open world-space decision.
 
 ## Later — hostile experimental execution
 

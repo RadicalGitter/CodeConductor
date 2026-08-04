@@ -4,31 +4,45 @@ This register records the Extra High architecture and threat-model outcomes.
 Resolved items retain their residual boundaries so later work cannot silently
 widen them.
 
+> **Ultra follow-up, 2026-08-04:** the implementation review at `5bf3cf2`
+> reopened parts of the first two outcomes below. A normal worker exit can leave
+> a detached descendant alive; kill failure is swallowed; concurrent callers
+> can claim one reserved attempt twice; a missing/malformed lease record can
+> wedge dispatch; and some quarantine states lack a public recovery path. The
+> sections below preserve the intended design and evidence that did pass, but
+> they are not current unattended-readiness claims. The corrective gates live
+> in `vesserin-backend-generation-plan.md`.
+
 ## Orphan process recovery
 
-**Outcome: resolved for local-host automatic retry.** Every command is launched
-through a separate Node guardian. Its identity is persisted before the guarded
-worker starts, and an ownership pipe makes dispatcher death trigger complete
-worker-tree termination. A recovered job is retried as a new attempt only when
-the guardian is gone. A live or missing identity is quarantined, and recovery
-never kills a bare PID. Guardian events use a nonce-bound control channel that
-is separate from worker stdout and stderr. Adversarial tests prove worker log
-bytes cannot spoof exit evidence, then crash the owning process and prove the
-guardian, worker, descendant, and delayed filesystem canary all die.
+**Outcome: guardian implementation exists; unattended closure reopened.** Every
+command is launched through a separate Node guardian. Its identity is persisted
+before the guarded worker starts, and an ownership pipe makes dispatcher death
+trigger the guardian's termination path. Recovery never kills a bare PID.
+Guardian events use a nonce-bound control channel separate from worker stdout
+and stderr. Existing adversarial tests prove worker log bytes cannot spoof exit
+evidence and cover owner-crash cleanup for the exercised process shape.
 
-Residual boundary: a reused guardian PID can conservatively delay work until
-human inspection; it cannot authorize a kill or duplicate attempt. Native
-Windows Job Objects may reduce latency later but are not required for the
-ownership invariant.
+Unmet exit: a direct worker can exit while a detached descendant survives, kill
+failure is not durably acknowledged, and guardian disappearance does not prove
+complete tree absence. OS-enforced process ownership, normal-exit descendant
+tests, cleanup evidence, and actionable reconciliation must pass before this
+outcome can be called resolved for automatic retry.
 
 ## Lease stealing and filesystem semantics
 
-**Outcome: resolved as a deliberately local lease.** Lease records now carry a
-monotonic generation, random instance identity, hostname, process identity, and
-timestamps. Renewal and release require the exact generation. Release first
-atomically renames the exact lock, so a stale owner cannot delete its
-successor. Expiration permits recovery only on the same host after the owner PID
-is gone; a live process keeps ownership through suspend. UNC roots are rejected.
+**Outcome: local lease implementation exists; unattended closure reopened.**
+Lease records carry a monotonic generation, random instance identity, hostname,
+process identity, and timestamps. Renewal and release require the exact
+generation. Release first atomically renames the exact lock, so a stale owner
+cannot delete its successor. Expiration permits recovery only on the same host
+after the owner PID is gone; a live process keeps ownership through suspend.
+UNC roots are rejected.
+
+Unmet exit: missing or malformed lease evidence can wedge dispatch, and some
+conservative quarantine states have no public reconciliation path. Repair,
+explanation, and crash-boundary tests must pass before the local lease is an
+unattended-readiness claim.
 
 Residual boundary: SMB, mapped network drives, shared Tailscale filesystems,
 clock-independent distributed fencing, and multi-host dispatch remain

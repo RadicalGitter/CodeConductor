@@ -1,6 +1,6 @@
 # Runtime contract
 
-- Status: implemented first slice
+- Status: implemented first slice; unattended hardening reopened
 - Contract version: `v1`
 
 ## MCP surface
@@ -22,6 +22,7 @@
 | `poll_contract_watches`    | Runs one immediate watch cycle                                     |
 | `get_attempt`              | Reads a durable attempt manifest                                   |
 | `get_verification`         | Reads typed deterministic verification evidence                    |
+| `get_review_bundle`        | Reads a bounded review packet; only its patch is revalidated today |
 | `read_attempt_artifact`    | Reads a bounded named artifact without arbitrary path access       |
 | `wait_for_attempt`         | Waits only while this process owns the attempt; otherwise reads it |
 | `cancel_attempt`           | Cancels the worker and its subprocess tree                         |
@@ -46,6 +47,7 @@ its own worktree.
       repository-status.txt
       changed-paths.json
       verification.json
+      review-packet.json
       setup-*.stdout.log / setup-*.stderr.log
       acceptance-*.stdout.log / acceptance-*.stderr.log
   workspaces/<attempt-id>/
@@ -114,11 +116,13 @@ machine suspend makes the heartbeat old. Renew and release require the exact
 owner, instance, and generation; an old owner cannot remove a newer lock.
 
 Every external command runs below a Node guardian whose identity is persisted
-before the worker starts. The guardian owns the process tree and kills it when
-Conductor's ownership pipe closes. On restart, a merely reserved attempt is
-cancelled and retried as a new attempt. An active attempt is retried only after
-its recorded guardian is gone; a live guardian or missing identity becomes
-`needs-input`. Conductor never kills a bare recorded PID during recovery.
+before the worker starts. Conductor never kills a bare recorded PID during
+recovery. On the current head, guardian disappearance is not sufficient proof
+that all descendants are gone, a malformed lease can wedge dispatch, and a
+queue item quarantined with a nonterminal attempt has no complete public
+reconciliation path. Therefore same-host automatic retry is not yet a proven
+unattended contract. The required transition, process-ownership, and recovery
+gates are specified in `docs/vesserin-backend-generation-plan.md`.
 
 These semantics are local-host semantics. UNC data roots are rejected. Mapped
 network drives and distributed dispatch are outside this contract.

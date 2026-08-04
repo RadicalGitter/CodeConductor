@@ -106,12 +106,19 @@ and produce separate logs. Setup must leave repository state clean; acceptance
 must leave the captured proposal unchanged. Network, stronger secret isolation,
 resource limits, and host mounts belong to the VM executor, not `AGENTS.md`.
 
-Every setup, worker, and acceptance subprocess is owned by a separate guardian
-process. Conductor persists the guardian identity before the guarded worker is
-started and keeps an ownership pipe open. If Conductor exits or crashes, pipe
-closure makes the guardian terminate the complete worker tree. Recovery retries
-only after the recorded guardian is provably gone; a live or unprovable
-identity is quarantined. A PID is never used by itself as authority to kill.
+Every setup, worker, and acceptance subprocess currently runs below a separate
+guardian process. Conductor persists the guardian identity before the guarded
+worker is started and keeps an ownership pipe open. A PID is never used by
+itself as authority to kill.
+
+The intended contract is complete process-tree ownership and retry only after
+absence is proven. The Ultra review of `5bf3cf2` showed that the current
+implementation does not yet meet it: a direct worker can exit while a detached
+descendant survives, kill failure is not durably acknowledged, and some
+recovery quarantines cannot be resolved through the public state machine. Use
+the current runtime only for attended trusted-worker trials until OS-enforced
+tree ownership and the fault/recovery campaign in
+`docs/vesserin-backend-generation-plan.md` pass.
 
 ## Extension boundary
 
