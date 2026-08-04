@@ -83,7 +83,11 @@ export class RetentionManager {
     try {
       entries = await readdir(root, { withFileTypes: true });
     } catch (error) {
-      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        error.code === "ENOENT"
+      ) {
         return result;
       }
       throw error;
@@ -339,8 +343,7 @@ export class RetentionManager {
               manifest.jobId,
               manifest.attemptId,
             ),
-        )) !==
-          candidate.cleanupSha256
+        )) !== candidate.cleanupSha256
       ) {
         throw new Error(`GC plan is stale for ${candidate.attemptId}`);
       }

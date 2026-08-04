@@ -44,11 +44,13 @@ test("publishes the provider-neutral MCP tool contract", async () => {
       "get_attempt",
       "get_attempt_cleanup",
       "get_queue_item",
+      "get_resource_policy",
       "get_review_bundle",
       "get_verification",
       "list_contract_watches",
       "list_queue",
       "list_worker_adapters",
+      "plan_retention_gc",
       "poll_contract_watches",
       "read_attempt_artifact",
       "reconcile_runtime",
@@ -66,6 +68,31 @@ test("publishes the provider-neutral MCP tool contract", async () => {
     });
     expect(response.isError).not.toBe(true);
     expect(response.structuredContent).toEqual({ adapters: [] });
+    const resourcePolicy = await client.callTool({
+      name: "get_resource_policy",
+      arguments: {},
+    });
+    expect(resourcePolicy.isError).not.toBe(true);
+    expect(
+      (
+        resourcePolicy.structuredContent as {
+          profile: { profileId: string };
+        }
+      ).profile.profileId,
+    ).toBe("overnight-local-v1");
+    const retention = await client.callTool({
+      name: "plan_retention_gc",
+      arguments: {},
+    });
+    expect(retention.isError).not.toBe(true);
+    expect(
+      (
+        retention.structuredContent as {
+          plan: { candidates: unknown[] };
+          actions: { pending: string[] };
+        }
+      ).plan.candidates,
+    ).toEqual([]);
     const reconciliation = await client.callTool({
       name: "reconcile_runtime",
       arguments: {},
