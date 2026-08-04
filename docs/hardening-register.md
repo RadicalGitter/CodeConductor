@@ -13,7 +13,7 @@ update on the exact implementing revision.
 ## HARD-001 — singular attempt claim
 
 - Severity: P0
-- State: confirmed; open
+- State: closed by `a84e8fc`
 - Failure: concurrent launch paths can claim one reserved attempt more than
   once.
 - Required change: one compare-and-transition engine with an incrementing
@@ -21,11 +21,17 @@ update on the exact implementing revision.
 - Required evidence: at least 100 randomized simultaneous-start trials launch
   exactly one worker; late callbacks and retries cannot regress terminal state.
 - Closure updates: runtime contract, architecture, operations, and queue tests.
+- Evidence: 100 deterministic randomized rounds, each with 2–20 jittered
+  simultaneous callers, entered the launch seam exactly once. A separate
+  integration race sent 100 jittered callers to one real fixture attempt and
+  observed one successful caller, one worktree creation, and one completed
+  worker. Revision-conflict tests prove stale attempt callbacks and stale queue
+  completion after retry cannot overwrite newer state.
 
 ## HARD-002 — dispatch crash windows
 
 - Severity: P0
-- State: confirmed; open
+- State: closed by `a84e8fc`
 - Failure: process termination between queue intent, attempt reservation,
   queue binding, and launch can leave duplicate, invisible, or permanently
   nonterminal work.
@@ -37,6 +43,14 @@ update on the exact implementing revision.
   disappears from reconciliation.
 - Closure updates: runtime contract, operations, fault matrix, and recovery
   tests.
+- Evidence: a fresh child process is terminated with exit code 91 immediately
+  after queue intent, attempt reservation, queue binding, and attempt claim.
+  Each restart reacquires the expired dead-owner lease, scans all attempts,
+  cancels any unlaunched orphan, and converges on exactly one completed worker
+  with no nonterminal remainder. In-process failpoint repetitions cover the
+  same matrix, and a journal/projection fault proves recovery from the
+  authoritative snapshot when the compact projection was not refreshed. See
+  the [dispatch fault matrix](dispatch-fault-matrix.md).
 
 ## HARD-003 — complete process-tree closure
 

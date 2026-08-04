@@ -41,12 +41,13 @@ status.
 ## Lifecycle
 
 ```text
-queue:   queued -> running -> completed
-              \-> cancelled | failed | needs-input
+queue:   queued -> dispatching -> running -> completed
+              \-> cancelled       \-> cancelling -> cancelled
+                                    \-> failed | needs-input
 
-attempt: reserved -> preparing -> running -> verifying -> completed
-                              \-> failed      \-> cancelled
-                              \-> needs-input
+attempt: reserved -> claimed -> preparing -> running -> verifying -> completed
+                                      \-> failed      \-> cancelled
+                                      \-> needs-input
 
 proposal: completed -> review-pending -> accepted | rejected | superseded
 
@@ -56,7 +57,9 @@ lineage: eligible parent proposals -> derived proposal baseline -> child proposa
 Attempt terminal state is never overwritten by review disposition. A retry is a
 new attempt under the same frozen job.
 
-Only one dispatcher lease owns queue-to-process transitions. Independent jobs
+Only one dispatcher lease owns queue-to-process transitions. The compatibility
+submission tool and dependency-aware enqueue tool both use that dispatcher;
+there is no second MCP launch path. Independent jobs
 may run up to the configured capacity; every mutation still receives its own
 worktree. Dependencies gate start, not acceptance: a dependency is satisfied
 only by a completed attempt with eligible deterministic evidence.
@@ -71,6 +74,13 @@ no branch or Conductor ref and is reconstructable from durable evidence. It is
 a disposable proposal baseline, never a merge or acceptance decision. The
 child patch and path scope are measured from that derived baseline, so inherited
 parent changes cannot launder wider authority into the child contract.
+
+Queue and attempt records use legal-transition tables and monotonically
+increasing revisions. Each revision first publishes a complete immutable
+journal snapshot by atomic directory rename, then refreshes the compact JSON
+projection. A durable operation UUID links dispatch intent, attempt reservation,
+queue binding, and the single launcher claim. Stale callbacks lose their
+revision comparison and cannot regress terminal state.
 
 The local dispatcher lease is generation-fenced. Expiration alone never
 authorizes stealing from a live same-host process, so machine suspend cannot

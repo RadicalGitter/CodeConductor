@@ -1,14 +1,15 @@
 # Runtime contract
 
 - Status: implemented first slice; unattended hardening reopened
-- Contract version: `v1`
+- MCP contract version: `v1`
+- Queue and attempt record version: `v2` (`v1` remains readable)
 
 ## MCP surface
 
 | Tool                       | Effect                                                             |
 | -------------------------- | ------------------------------------------------------------------ |
 | `list_worker_adapters`     | Lists configured adapter contracts                                 |
-| `submit_coding_job`        | Freezes a job and starts an isolated attempt without waiting       |
+| `submit_coding_job`        | Freezes a job and hands it to the owned dispatcher without waiting |
 | `enqueue_coding_job`       | Freezes a job and durably queues it with dependency metadata       |
 | `list_queue`               | Reads compact queue and completion records                         |
 | `get_queue_item`           | Reads one queue record                                             |
@@ -28,10 +29,12 @@
 | `cancel_attempt`           | Cancels the worker and its subprocess tree                         |
 | `remove_attempt_workspace` | Removes the exact recorded worktree of a terminal attempt          |
 
-Submission is intentionally non-blocking. Callers retain only compact IDs and
-poll durable state instead of holding an architect turn open while a worker
-runs. Multiple submissions may execute concurrently; each mutating attempt has
-its own worktree.
+Submission is intentionally non-blocking. Both submission tools enter the same
+durable queue; `submit_coding_job` is the compatibility form with default
+priority and no dependencies. Its result contains `item` plus
+`idempotentReplay`, and callers poll the queue item before using its attempt ID.
+No MCP route launches an attempt outside the dispatcher. Multiple submissions
+may execute concurrently; each mutating attempt has its own worktree.
 
 ## Durable layout
 
@@ -41,6 +44,7 @@ its own worktree.
     job.json
     attempts/<attempt-id>/
       attempt.json
+      transitions/<revision>/attempt.json
       stdout.log
       stderr.log
       proposal.patch
@@ -53,17 +57,28 @@ its own worktree.
   workspaces/<attempt-id>/
   queue/
     items/<job-id>/queue.json
+    items/<job-id>/transitions/<revision>/queue.json
     dispatcher.lock/lease.json
     lease-generation.json
   source-runs/<run-id>/manifest.json
   source-watches/<watch-id>/watch.json
 ```
 
-Job and initial-attempt reservations become visible through atomic directory
-renames only after their JSON is complete. Manifest updates use write-fsync-
-rename. An idempotency key maps to a stable job ID; reusing it with a different
-request is rejected, and replaying the same request does not spawn another
-attempt.
+Job and attempt reservations become visible through atomic directory renames
+only after their JSON is complete. Queue and attempt updates increment a
+revision, validate a legal transition, atomically publish a complete journal
+snapshot, then update the compact projection. The journal remains authoritative
+if the process stops before projection. A stale writer cannot overwrite a newer
+revision. Existing v1 records without `revision` read as revision zero and are
+upgraded to the v2 record schema on their next transition. Newly reserved
+attempts and queue items are v2.
+
+Every dispatch writes one UUID `dispatchOperationId` through queue intent,
+attempt reservation, queue binding, and launch claim. The attempt can be
+claimed once, only for that operation, and only its recorded launcher instance
+may cross the in-process launch seam. An idempotency key maps to a stable job
+ID; reusing it with a different request is rejected, and replaying the same
+request does not spawn another attempt.
 
 ## Authority semantics
 
@@ -108,12 +123,22 @@ prevents removal of the resource's worktree and cleanup working directory.
 
 ## Restart semantics
 
-Completed manifests, queue items, and artifacts survive process restart. One
-generation-fenced heartbeat lease owns dispatch. A lease can be recovered
+Completed manifests, queue items, and artifacts survive process restart. Queue
+state uses `queued -> dispatching -> running`, while attempt state uses
+`reserved -> claimed -> preparing -> running`. Active cancellation remains
+`cancelling` until terminal attempt evidence exists. One generation-fenced
+heartbeat lease owns dispatch. A lease can be recovered
 automatically only after expiration, on the same host, when its recorded owner
 process is no longer alive. A live process remains authoritative even after
 machine suspend makes the heartbeat old. Renew and release require the exact
 owner, instance, and generation; an old owner cannot remove a newer lock.
+
+Startup reconstructs a missing queue-to-attempt link from the operation ID,
+returns intent without an attempt safely to `queued`, cancels unlaunched orphan
+attempts before retry, and scans every nonterminal attempt rather than trusting
+queue visibility alone. Abrupt-process tests cover the four pre-launch
+boundaries. Recovery after workspace creation remains governed by guardian and
+external-resource evidence.
 
 Every external command runs below a Node guardian whose identity is persisted
 before the worker starts. Conductor never kills a bare recorded PID during

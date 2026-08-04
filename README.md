@@ -52,7 +52,8 @@ Conductor
 - Non-blocking job submission, polling, cancellation, and bounded parallel
   queueing.
 - Dependency graphs with hash-bound proposal ancestry.
-- Atomic job and attempt manifests.
+- Revision-fenced queue and attempt journals with a single durable dispatch
+  identity from intent through launch claim.
 - Positive path scope, protected paths, setup cleanliness, and acceptance
   command evidence.
 - Bounded artifact retrieval and proposal review packets.
@@ -62,10 +63,12 @@ Conductor
   security floor is not met.
 - A stdio MCP surface for architect and harness integrations.
 
-The implementation has also been adversarially reviewed. Duplicate dispatch
-claims, crash-window recovery, complete process-tree ownership, evidence
-sealing, and resource ceilings remain open before unattended use. The README,
-runtime contract, and operations guide deliberately do not hide that boundary.
+The implementation has also been adversarially reviewed. Duplicate pre-launch
+claims and dispatch crash windows are now closed by repeatable race and abrupt-
+termination tests. Complete process-tree ownership, public reconciliation,
+evidence sealing, and resource ceilings remain open before unattended use. The
+README, runtime contract, and operations guide deliberately do not hide that
+boundary.
 
 ## What Conductor does not do
 
@@ -136,13 +139,14 @@ gates are in the
 - [Behavior parity map](docs/parity-map.md)
 - [Roadmap](docs/roadmap.md)
 - [Unattended hardening register](docs/hardening-register.md)
+- [Dispatch fault matrix](docs/dispatch-fault-matrix.md)
 - [Extra High review register](docs/extra-high-review.md)
 
 ## Repository layout
 
 ```text
 src/contracts/      versioned job, attempt, queue, and evidence schemas
-src/orchestrator/   proposal orchestration and compatibility entry points
+src/orchestrator/   proposal execution and attempt lifecycle
 src/queue/          durable scheduling, leases, and recovery
 src/runtime/        processes, worktrees, executables, and external resources
 src/verification/   scope, command, and eligibility checks

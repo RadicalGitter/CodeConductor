@@ -258,6 +258,14 @@ Exit evidence:
   queue/nonterminal attempt dead end;
 - every queue item converges or explains the exact evidence needed to proceed.
 
+Progress on `a84e8fc`: the revision-fenced transition engine,
+`dispatchOperationId`, scheduler-owned MCP submission, `dispatching` and
+`cancelling`, complete-attempt startup scan, and pre-launch termination matrix
+are implemented. HARD-001 and HARD-002 are closed. Phase 1 remains open for
+immutable terminal/cleanup records, malformed lease and staging repair,
+direct-queue graph validation, the public reconcile surface, and exhaustive
+state-combination convergence.
+
 ### Phase 2 — process, Git, resource, and cleanup closure
 
 Deliver:
@@ -818,8 +826,10 @@ canaries. A successful trusted-development pilot does not satisfy this gate.
 Keep each item independently testable and commit it separately:
 
 1. truth reconciliation and hardening register;
-2. transition engine and scheduler-only launch;
-3. dispatch journal, lease repair, and startup reconciliation;
+2. transition engine and scheduler-only launch — completed by `a84e8fc`;
+3. dispatch journal, lease repair, and startup reconciliation — pre-launch
+   journal and attempt scan completed by `a84e8fc`; lease repair and public
+   reconciliation remain open;
 4. process-tree ownership and cleanup proof;
 5. resource/Git/artifact budgets and garbage collection;
 6. typed worker outcome and sealed evidence;

@@ -51,3 +51,34 @@ revision, isolated the primary checkout, persisted output, replayed without a
 second spawn, and removed their worktrees through public tools. See
 [`verification.md`](verification.md). No Kode implementation source is imported
 or linked.
+
+## HARD-001/HARD-002 lifecycle transition refactor
+
+- Conductor baseline revision: `2a42d0a`
+- Implementing revision: `a84e8fc`
+- Target: one durable launch path with revision-fenced queue and attempt state
+- Scope: transition ownership and pre-launch crash windows only
+
+| Workflow or contract                                  | Baseline behavior                                    | Target parity                                                                        | Verification                                   |
+| ----------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------- |
+| `submit_coding_job` input and non-blocking handoff    | freezes, reserves, and launches directly             | same input; returns queue wrapper and flows only through the owned dispatcher        | MCP contract and compatibility submission test |
+| `enqueue_coding_job` dependency and priority behavior | durable queue with bounded concurrency               | same with explicit `dispatching` evidence                                            | queue integration tests                        |
+| Existing `conductor.queue-item/v1` records            | readable without a revision                          | read as revision zero and upgrade to v2 on the next transition                       | legacy fixture round trip                      |
+| Existing `conductor.attempt/v1` records               | readable without a revision                          | read as revision zero and upgrade to v2 on the next transition                       | legacy fixture round trip                      |
+| One reserved attempt started concurrently             | can pass multiple read-before-launch checks          | deliberate fix: exactly one durable claim and one workspace creation                 | 100-caller race test                           |
+| Crash before attempt reservation                      | running item without an attempt becomes ambiguous    | deliberate fix: durable operation identity returns safely to queued                  | failpoint/restart test                         |
+| Crash after attempt reservation but before launch     | queue and attempt can lose their relationship        | deliberate fix: reconstruct by operation identity, then retry or quarantine honestly | failpoint/restart test                         |
+| Cancellation while a process is active                | queue may say `cancelled` before attempt termination | safer internal behavior: expose `cancelling` until terminal attempt evidence exists  | cancellation transition test                   |
+| Job, attempt, artifact paths, and proposal semantics  | current provider-neutral formats                     | unchanged except additive transition metadata                                        | full suite and artifact-path assertions        |
+
+Known defects deliberately deferred from this slice: complete OS process-tree
+ownership, malformed lease repair, immutable terminal cleanup records, complete
+review-evidence sealing, quotas, and the public reconciliation command. They
+remain open in [`hardening-register.md`](hardening-register.md); passing this
+parity table must not close them implicitly.
+
+The complete pre-launch termination outcomes are recorded in the
+[dispatch fault matrix](dispatch-fault-matrix.md). HARD-001 and HARD-002 are
+closed on `a84e8fc`; the broader Phase 1 state machine is not complete because
+lease repair, public reconciliation, immutable cleanup records, and complete
+queue validation remain separate tracked work.

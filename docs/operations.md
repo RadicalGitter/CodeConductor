@@ -1,10 +1,11 @@
 # Unattended operations
 
 > **Readiness correction:** this is the intended operating procedure, not the
-> current readiness claim. The Ultra review of commit `5bf3cf2` reopened
-> attempt fencing, process-tree closure, lease/recovery, evidence integrity, and
-> resource-budget gates. Use attended trusted-worker trials only until the
-> hardening exits in `vesserin-backend-generation-plan.md` pass.
+> current readiness claim. The Ultra review of commit `5bf3cf2` reopened the
+> unattended gates. Attempt fencing and pre-launch dispatch recovery were
+> closed by `a84e8fc`; process-tree closure, lease repair, evidence integrity,
+> and resource budgets remain open. Use attended trusted-worker trials only
+> until the hardening exits in `vesserin-backend-generation-plan.md` pass.
 
 This run mode watches committed source contracts, queues each newly observed
 revision once, runs bounded workers in isolated worktrees, applies deterministic
@@ -86,6 +87,13 @@ see the exact observed revision or the last scan error. Queue operations are
 available through `list_queue`, `get_queue_item`, `cancel_queued_job`, and
 `retry_queued_job`.
 
+`submit_coding_job` is now a compatibility queue submission, not an alternate
+launcher. Its response wraps the current queue `item` and
+`idempotentReplay`. An item may remain `queued` when capacity is full; once
+dispatch begins it records `dispatchOperationId` and progresses through
+`dispatching` and `running`. Cancellation of active work reports `cancelling`
+until the attempt reaches a durable terminal state.
+
 ## Review handoff
 
 For an eligible terminal attempt, call `get_review_bundle`. The response
@@ -112,6 +120,14 @@ does not re-enter the pipeline under another name.
 number of validated llama.cpp slots; the current local canary uses one worker,
 while the deterministic suite proves concurrency two. Queue state and source
 watches survive process restart. Work that was only queued resumes.
+
+On startup, the dispatcher scans the complete attempt set as well as the queue.
+It joins partial dispatch state by `dispatchOperationId`: intent with no attempt
+returns to `queued`; a reserved or claimed orphan is durably cancelled before a
+new attempt is allowed; a terminal attempt completes its queue item; unverifiable
+live work becomes `needs-input`. Revision journals remain authoritative when a
+projection write was interrupted. Do not edit `queue.json`, `attempt.json`, or
+their transition directories by hand.
 
 Every external command has a separate process guardian, and recovery never
 kills a bare recorded PID. Current evidence proves several cancellation and
