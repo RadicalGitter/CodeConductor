@@ -1,4 +1,7 @@
 import { expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { freezeJobRequest } from "../src/contracts/job.js";
@@ -19,15 +22,56 @@ const contract = freezeJobRequest(
   },
 );
 
-test("Kode defaults to its explicit safe permission mode", () => {
+test("Kode defaults to safe unattended edits without permission bypass", () => {
   const invocation = new KodeAdapter(process.execPath).buildInvocation(
     contract,
     "Z:\\workspace",
   );
   expect(invocation.executable).toBe(process.execPath);
   expect(invocation.args).toContain("--safe");
+  expect(invocation.args).toContain("acceptEdits");
+  expect(invocation.args).toContain("--verbose");
   expect(invocation.args).toContain("stream-json");
+  expect(invocation.args).toContain("Read,Edit,Write,LS,Glob,Grep");
+  expect(invocation.args).toContain("--max-turns");
+  expect(invocation.args).toContain("16");
+  expect(invocation.args).not.toContain("Bash");
+  expect(invocation.args).not.toContain("Task");
+  expect(invocation.args).not.toContain("bypassPermissions");
+  expect(invocation.args.at(-1)).toContain(
+    "Never create temporary files, helper scripts, test runners",
+  );
+  expect(invocation.args.at(-1)).toContain(
+    "never create repository files for reports",
+  );
   expect(invocation.cwd).toBe("Z:\\workspace");
+});
+
+test("Kode omits file creation authority when every allowed target exists", () => {
+  const workspace = mkdtempSync(
+    path.join(os.tmpdir(), "conductor-kode-tools-"),
+  );
+  try {
+    mkdirSync(path.join(workspace, "gameplay"));
+    writeFileSync(path.join(workspace, "gameplay", "health.js"), "stub\n");
+    const scoped = freezeJobRequest(
+      {
+        objective: "Edit an existing gameplay function",
+        repositoryPath: workspace,
+        adapterId: "kode",
+        scope: { allowedPaths: ["gameplay/health.js"] },
+      },
+      { repositoryRoot: workspace, baseRevision: "d".repeat(40) },
+    );
+    const invocation = new KodeAdapter(process.execPath).buildInvocation(
+      scoped,
+      workspace,
+    );
+    const tools = invocation.args[invocation.args.indexOf("--tools") + 1];
+    expect(tools).toBe("Read,Edit,LS,Glob,Grep");
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
 });
 
 test("Kode can launch a compiled fork through an explicit interpreter and entry", () => {

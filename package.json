@@ -11,6 +11,7 @@
   "scripts": {
     "start:mcp": "bun src/cli.ts",
     "smoke:kode-parity": "bun scripts/kode-parity-smoke.ts",
+    "smoke:kode-live": "bun scripts/live-kode-canary.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "format": "prettier --write .",

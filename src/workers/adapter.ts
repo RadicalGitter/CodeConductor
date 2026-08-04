@@ -79,5 +79,7 @@ Constraints:
 Stop and report needs-input instead of guessing when:
 - ${escalations}
 
-Use the coding and inspection tools available in your harness. Make the requested changes in the assigned worktree and run focused checks when practical. Treat your changes and final response as a proposal: Conductor records evidence, while acceptance and canonical integration remain outside your authority.`;
+Change only the declared allowed paths. Never create temporary files, helper scripts, test runners, or other files outside that scope. Command execution is deliberately unavailable in this worker lane: do not attempt commands, simulate them with files, retry denied tools, or delegate around the boundary. Conductor independently runs every owner-configured setup and acceptance command after you return.
+
+Use the available file inspection and editing tools to make the requested change. Put all status, skipped-check, needs-input, and uncertainty reporting only in your final response; never create repository files for reports. Do not describe an unexecuted check as verified. Treat your changes and final response as a proposal: Conductor records evidence, while acceptance and canonical integration remain outside your authority.`;
 }
