@@ -27,6 +27,7 @@ It never merges into the project checkout.
 
    ```powershell
    bun run doctor
+   bun run smoke:runtime-mcp
    bun run smoke:kode-live
    bun run check
    ```
@@ -100,6 +101,10 @@ The live canary preserves both successes and failures under
 - `2026-08-04T04-40-24-922Z`: the full committed-source → watch → durable queue
   → isolated Kode → deterministic acceptance chain completed and was eligible
   in 12.6 seconds after per-contract file-creation authority was removed.
+- `2026-08-04T04-54-02-363Z`: the same full chain completed in 17.5 seconds and
+  additionally materialized an untruncated advisory review packet bound to
+  patch SHA-256
+  `127eb6a0efbf37e3f64a992321deda41f102202e065159cbb94d0e877e35f432`.
 
 These negatives are operational evidence, not artifacts to delete or relabel
 as successful work.

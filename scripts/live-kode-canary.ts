@@ -232,6 +232,7 @@ try {
   attemptId = item.attemptId;
   const attempt = await conductor.getAttempt(attemptId);
   const verification = await conductor.getVerification(attemptId);
+  const review = await conductor.getReviewBundle(attemptId);
   const changedPaths = JSON.parse(
     await readFile(attempt.artifacts.changedPaths, "utf8"),
   ) as string[];
@@ -251,6 +252,14 @@ try {
         verificationStatus: attempt.verificationStatus,
         changedPaths,
         eligibleForReview: verification.eligibleForReview,
+        reviewPacket: {
+          schema: review.packet.schema,
+          authority: review.packet.authority,
+          patchSha256: review.packet.bindings.find(
+            (binding) => binding.name === "proposalPatch",
+          )?.sha256,
+          patchTruncated: review.patch.truncated,
+        },
         runRoot,
         artifacts: attempt.artifacts,
       },

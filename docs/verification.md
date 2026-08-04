@@ -142,3 +142,10 @@ scope-clean result.
 The suite now also creates idempotent hash-bound review packets and proves that
 tampering with the proposal patch after packet creation makes review-bundle
 retrieval fail.
+
+A final repeat at
+`C:\Users\oscar\.conductor\canaries\2026-08-04T04-54-02-363Z` completed the
+same full live chain in 17.5 seconds and added an untruncated, SHA-256-bound
+review packet. `bun run smoke:runtime-mcp` separately launched the real stdio
+entrypoint with the local runtime configuration, discovered 20 tools, confirmed
+the Kode adapter, queried queue and watch state, and shut down cleanly.
