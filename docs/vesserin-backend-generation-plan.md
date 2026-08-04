@@ -262,11 +262,12 @@ Progress on `a84e8fc`: the revision-fenced transition engine,
 `dispatchOperationId`, scheduler-owned MCP submission, `dispatching` and
 `cancelling`, complete-attempt startup scan, and pre-launch termination matrix
 are implemented. HARD-001 and HARD-002 are closed. Phase 1 remains open for
-immutable terminal/cleanup records, staging repair, direct-queue graph
-validation, and exhaustive state-combination convergence. Revision `243b0ec`
-closes HARD-005: malformed/missing leases now have typed, evidence-preserving
-repair, and dry-run reconciliation is public through CLI and MCP. Queue/attempt
-repair actions remain deliberately absent, so HARD-006 is still open.
+staging repair, direct-queue graph validation, and exhaustive state-combination
+convergence. Revision `243b0ec` closes HARD-005: malformed/missing leases now
+have typed, evidence-preserving repair, and dry-run reconciliation is public
+through CLI and MCP. Revisions `726e1cf` and `3afab31` separate versioned cleanup
+evidence from immutable terminal outcomes. Queue/attempt repair actions remain
+deliberately absent, so HARD-006 is still open.
 
 ### Phase 2 — process, Git, resource, and cleanup closure
 
@@ -308,6 +309,18 @@ Exit evidence:
   unproven;
 - no active resource survives beyond its declared cleanup deadline without an
   actionable health finding.
+
+Progress on `caae1c8`, `726e1cf`, `3afab31`, and `77c2b54`: the supported
+Windows lane now places commands in a verified kill-on-close Job before launch
+and proves normal-exit, cancellation, timeout, and owner-crash closure for
+detached Node and Bun descendants. Cleanup subjects, deadlines, and observations
+are durable and independent of terminal worker outcome; unresolved cleanup
+blocks queue success, retry, and worktree removal. Worktree remove/prune commands
+are bounded and Job-owned. HARD-003 is closed for this Windows profile and
+HARD-004 is closed. Phase 2 remains open for trusted/config-isolated bounds on
+every internal Git operation, total-attempt and artifact quotas, retention/GC,
+profile-reconstructed external cleanup, Docker qualification, and a cgroup-
+backed POSIX lane.
 
 ### Phase 3 — eligibility and evidence sealing
 

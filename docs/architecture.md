@@ -31,7 +31,8 @@ status.
 | --------------------------------------- | -------------------------------------------- | ---------------------------------------- |
 | Project repository and accepted commits | Authoritative                                | Owning repository                        |
 | Job contract                            | Authoritative for one job                    | Conductor after schema/policy validation |
-| Attempt manifest and raw logs           | Audit evidence                               | Append/update only through Conductor     |
+| Attempt manifest and raw logs           | Audit evidence                               | Terminal manifest immutable in Conductor |
+| Cleanup requirements and observations   | Operational evidence                         | Separate append-only revision journal    |
 | Worker patch                            | Proposal                                     | Worker attempt                           |
 | Check results                           | Audit evidence                               | Deterministic runner                     |
 | Semantic review                         | Proposal                                     | Reviewer adapter                         |
@@ -56,6 +57,13 @@ lineage: eligible parent proposals -> derived proposal baseline -> child proposa
 
 Attempt terminal state is never overwritten by review disposition. A retry is a
 new attempt under the same frozen job.
+
+Process, external-resource, and workspace cleanup are also separate from the
+terminal worker outcome. Each attempt owns a versioned cleanup record with
+registered subjects, deadlines, and append-only observations. A later cleanup
+failure cannot turn completed worker evidence into failure, and worker success
+cannot conceal unresolved cleanup. Queue completion and retry require cleanup
+to be `not-required` or `proven`.
 
 Only one dispatcher lease owns queue-to-process transitions. The compatibility
 submission tool and dependency-aware enqueue tool both use that dispatcher;
@@ -122,19 +130,24 @@ and produce separate logs. Setup must leave repository state clean; acceptance
 must leave the captured proposal unchanged. Network, stronger secret isolation,
 resource limits, and host mounts belong to the VM executor, not `AGENTS.md`.
 
-Every setup, worker, and acceptance subprocess currently runs below a separate
-guardian process. Conductor persists the guardian identity before the guarded
-worker is started and keeps an ownership pipe open. A PID is never used by
-itself as authority to kill.
+On the supported Windows lane, every setup, worker, acceptance, external-
+cleanup, and bounded Git-cleanup subprocess runs below a PowerShell 7 Job host.
+The host creates a Windows Job Object with kill-on-close, assigns the guardian
+before Conductor authorizes worker start, and verifies both membership and the
+kernel limit. The v2 guardian identity and containment claim are persisted
+before launch. Closing or terminating the Job proves the owned process tree is
+empty; a PID is never used by itself as kill authority. This applies on normal
+root exit as well as cancellation, timeout, and Conductor owner crash.
 
-The intended contract is complete process-tree ownership and retry only after
-absence is proven. The Ultra review of `5bf3cf2` showed that the current
-implementation does not yet meet it: a direct worker can exit while a detached
-descendant survives, kill failure is not durably acknowledged, and some
-recovery quarantines cannot be resolved through the public state machine. Use
-the current runtime only for attended trusted-worker trials until OS-enforced
-tree ownership and the fault/recovery campaign in
-`docs/vesserin-backend-generation-plan.md` pass.
+Termination and cleanup are durable evidence, not implications inferred from a
+terminal status. Unproved process absence, external-resource release, or
+workspace removal remains `unknown` or `failed`, blocks retry and evidence
+removal, and appears in reconciliation. A missing verified v2 Windows Job owner
+proves closure through kill-on-close. Legacy guardians and the current POSIX
+process-group implementation do not provide equivalent kernel containment, so
+they fail closed and are not an unattended supported lane. Public repair of
+every remaining queue/attempt quarantine is still open under HARD-006; the
+process-ownership claim does not close that separate state-machine gate.
 
 ## Extension boundary
 

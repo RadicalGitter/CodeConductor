@@ -59,7 +59,10 @@ Conductor
 - Bounded artifact retrieval and proposal review packets.
 - A generation-fenced single-host dispatcher lease.
 - Evidence-preserving lease recovery plus dry-run runtime reconciliation.
-- Guarded subprocesses and durable external-resource records.
+- Verified Windows Job Object ownership for every guarded command, including
+  normal-exit descendant cleanup and owner-crash closure.
+- Independent durable cleanup requirements and observations for process trees,
+  external resources, and workspaces.
 - A digest-pinned Docker verification lane that fails closed when its configured
   security floor is not met.
 - A stdio MCP surface for architect and harness integrations.
@@ -67,10 +70,11 @@ Conductor
 The implementation has also been adversarially reviewed. Duplicate pre-launch
 claims and dispatch crash windows are now closed by repeatable race and abrupt-
 termination tests. Malformed and missing lease recovery is also closed by a
-typed, evidence-bound repair path. Complete process-tree ownership, public
-queue/attempt convergence, evidence sealing, and resource ceilings remain open
-before unattended use. The README, runtime contract, and operations guide
-deliberately do not hide that boundary.
+typed, evidence-bound repair path. Process-tree and cleanup closure now pass on
+the supported PowerShell 7 Windows lane; legacy and POSIX-only containment fail
+closed. Public queue/attempt convergence, evidence sealing, and resource
+ceilings remain open before unattended use. The README, runtime contract, and
+operations guide deliberately do not hide that boundary.
 
 ## What Conductor does not do
 
@@ -87,8 +91,9 @@ accepted repository state.
 
 ## Quick start
 
-Prerequisites: [Bun](https://bun.sh/) and Git. Node-compatible production
-artifacts remain a goal, while development and tests use Bun.
+Prerequisites: [Bun](https://bun.sh/), Git, and PowerShell 7 (`pwsh`) for the
+supported Windows process-ownership lane. Node-compatible production artifacts
+remain a goal, while development and tests use Bun.
 
 ```powershell
 bun install

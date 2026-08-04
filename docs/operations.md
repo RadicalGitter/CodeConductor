@@ -4,9 +4,10 @@
 > current readiness claim. The Ultra review of commit `5bf3cf2` reopened the
 > unattended gates. Attempt fencing and pre-launch dispatch recovery were
 > closed by `a84e8fc`, and malformed/missing lease recovery was closed by
-> `243b0ec`. Process-tree closure, complete queue/attempt convergence, evidence
-> integrity, and resource budgets remain open. Use attended trusted-worker
-> trials only until the hardening exits in
+> `243b0ec`. Windows process-tree and cleanup closure were closed by `caae1c8`,
+> `726e1cf`, `3afab31`, and `77c2b54`. Complete queue/attempt convergence,
+> review-evidence integrity, and resource budgets remain open. Use attended
+> trusted-worker trials only until the remaining hardening exits in
 > `vesserin-backend-generation-plan.md` pass.
 
 This run mode watches committed source contracts, queues each newly observed
@@ -16,8 +17,10 @@ It never merges into the project checkout.
 
 ## One-time local setup
 
-1. Copy `.env.example` to the ignored `.env.local` and replace `YOUR_USER`.
-2. Copy `config/command-profiles.example.json` to the ignored
+1. Install PowerShell 7 (`pwsh`) on Windows. It is part of the supported
+   process-ownership profile, not an optional administration shell.
+2. Copy `.env.example` to the ignored `.env.local` and replace `YOUR_USER`.
+3. Copy `config/command-profiles.example.json` to the ignored
    `config/command-profiles.local.json`. Keep only absolute executables that the
    owner intentionally allows as setup or acceptance commands.
    If using the external verifier, also copy
@@ -25,7 +28,7 @@ It never merges into the project checkout.
    `config/sandbox-profiles.local.json`, set
    `CONDUCTOR_SANDBOX_PROFILES_FILE`, and replace the canary-only profile with
    the project's reviewed digest-pinned verifier image.
-3. With the intended llama.cpp-compatible server running, create a dedicated
+4. With the intended llama.cpp-compatible server running, create a dedicated
    Kode profile:
 
    ```powershell
@@ -37,7 +40,7 @@ It never merges into the project checkout.
    profile unless `--force` is supplied. The profile uses a dummy local API key
    and is separate from the user's interactive Kode configuration.
 
-4. Prove the complete configuration before leaving it unattended:
+5. Prove the complete configuration before leaving it unattended:
 
    ```powershell
    bun run doctor
@@ -88,7 +91,8 @@ Use `register_contract_watch` once per repository. Use
 `poll_contract_watches` for an immediate cycle and `list_contract_watches` to
 see the exact observed revision or the last scan error. Queue operations are
 available through `list_queue`, `get_queue_item`, `cancel_queued_job`, and
-`retry_queued_job`.
+`retry_queued_job`. Use `get_attempt_cleanup` to inspect the independent cleanup
+record for an attempt; do not infer cleanup from terminal worker status.
 
 ## Inspect and repair a lease
 
@@ -180,13 +184,28 @@ live work becomes `needs-input`. Revision journals remain authoritative when a
 projection write was interrupted. Do not edit `queue.json`, `attempt.json`, or
 their transition directories by hand.
 
-Every external command has a separate process guardian, and recovery never
-kills a bare recorded PID. Current evidence proves several cancellation and
-owner-crash paths but not complete closure: detached descendants can survive a
-normal root-worker exit, and some live/missing-identity quarantines cannot be
-resolved safely through the public API. Treat guardian disappearance as
-insufficient for unattended retry until the OS-enforced ownership and
-reconciliation campaign passes.
+On Windows, every external command has a separate guardian inside a verified
+kill-on-close Job Object. The guarded command starts only after ownership
+evidence is persisted. Normal exit, cancellation, timeout, and owner-crash
+tests prove closure for detached Node and Bun descendants. Recovery never kills
+a bare PID: absence of a verified v2 Windows Job owner proves closure, while a
+legacy guardian or non-kernel POSIX process group remains `unknown` and blocks
+retry.
+
+Each attempt has a separate `cleanup.json` and revision journal. Its registered
+process-tree, external-resource, and workspace obligations converge only from
+typed observations. Failed and unknown observations remain in history even
+when a later retry proves release. Automatic and manual worktree removal use a
+30-second total deadline; their Git removal and prune commands are individually
+bounded and Job-owned. External cleanup uses the frozen owner profile and must
+finish with proven process termination. Queue completion becomes
+`needs-input`, and reconciliation emits `attempt-cleanup-unresolved`, whenever
+cleanup is not `not-required` or `proven`.
+
+PowerShell host startup is currently paid for each guarded command and can add
+seconds to short operations, especially cold. Treat timings from a loaded
+machine as correctness observations only. Optimize the host lifecycle only
+after preserving the ownership gate and typed termination evidence.
 
 The generation-fenced queue lease is intentionally single-machine. Expired
 heartbeats are not stolen from live local processes, which makes suspend safe.

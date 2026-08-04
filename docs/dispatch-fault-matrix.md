@@ -3,7 +3,8 @@
 - Implementing revision: `a84e8fc`
 - Scope: queue intent through pre-worker launch
 - Result: HARD-001 and HARD-002 closed at `a84e8fc`; HARD-005 lease repair
-  closed separately at `243b0ec`; later lifecycle items remain open
+  closed separately at `243b0ec`; process/cleanup closure was later recorded in
+  the hardening register, while HARD-006 through HARD-008 remain open
 
 The test harness terminates a fresh dispatcher process at each named boundary,
 waits for its dead-owner lease to expire, and starts a new dispatcher over the
@@ -33,8 +34,11 @@ Additional evidence:
 The pre-launch matrix does not claim closure for termination after workspace
 creation, guardian start, worker exit, verification, terminal evidence, review
 creation, or external-resource operations. Malformed lease records are covered
-by the later matrix below. The remaining boundaries stay tracked by HARD-003
-through HARD-008 in the [hardening register](hardening-register.md).
+by the later matrix below. Process and cleanup boundaries were closed for the
+supported Windows lane by the later HARD-003/HARD-004 extension in the
+[parity map](parity-map.md). Public recovery, evidence sealing, and resource
+bounds remain tracked by HARD-006 through HARD-008 in the
+[hardening register](hardening-register.md).
 
 ## Lease-repair fault matrix
 

@@ -18,7 +18,7 @@ source remains available only as historical evidence until parity is accepted.
 | Durable atomic attempt manifest                          | `manifest.json`                | Artifact store              | implemented | concurrent atomic reservation/readback                     |
 | Store stdout/stderr separately                           | attempt artifacts              | Artifact store              | implemented | process and orchestration content tests                    |
 | Distinguish timeout/cancel/spawn/backend/harness failure | manifest fields                | Process runner/orchestrator | partial     | typed failures; full lifecycle matrix pending              |
-| MCP cancellation reaches complete Windows process tree   | `AbortSignal`, `taskkill /T`   | Process runner              | implemented | child-and-grandchild canary                                |
+| MCP cancellation reaches complete Windows process tree   | `AbortSignal`, `taskkill /T`   | Process runner              | implemented | verified Job Object; descendant and owner-crash canaries   |
 | Retain worktree after completion or cancellation         | explicit cleanup tool          | Workspace manager           | implemented | orchestration lifecycle test                               |
 | Explicit worktree removal                                | MCP `remove_delegate_worktree` | Workspace manager           | implemented | exact recorded target and managed-root check               |
 | Caller-specified attempt replay is idempotent            | duplicate result               | Orchestrator                | implemented | same-key no-respawn and conflicting-key rejection          |
@@ -73,9 +73,10 @@ or linked.
 
 Known defects deliberately deferred from this slice: complete OS process-tree
 ownership, malformed lease repair, immutable terminal cleanup records, complete
-review-evidence sealing, quotas, and the public reconciliation command. They
-remain open in [`hardening-register.md`](hardening-register.md); passing this
-parity table must not close them implicitly.
+review-evidence sealing, quotas, and the public reconciliation command. Their
+current status is tracked in [`hardening-register.md`](hardening-register.md)
+and the later extensions below; passing this historical parity table did not
+close them implicitly.
 
 The complete pre-launch termination outcomes are recorded in the
 [dispatch fault matrix](dispatch-fault-matrix.md). HARD-001 and HARD-002 are
@@ -103,3 +104,22 @@ closure without implying closure of the broader Phase 1 state machine.
 This closes HARD-005 only. The same dry-run reports queue/attempt relationship
 defects, but does not mutate them. Exhaustive state convergence and narrowly
 typed queue/attempt actions remain HARD-006.
+
+## HARD-003/HARD-004 process and cleanup extension
+
+- Implementing revisions: `caae1c8`, `726e1cf`, `3afab31`, and `77c2b54`
+- Supported lane: Windows with PowerShell 7 and verified Job Object ownership
+- Target: prove complete owned-process closure and keep cleanup truth separate
+  from immutable worker outcome
+
+| Prior behavior                                                           | Target behavior                                                                                              | Verification                                                           |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| Detached descendants could survive normal root exit                      | verified kill-on-close Job contains guardian and descendants before launch                                   | Node/Bun descendant, delayed-canary, cancel, timeout, owner-crash      |
+| Guardian disappearance was treated conservatively but could not prove it | absent persisted v2 Windows Job owner proves closure; legacy/POSIX evidence remains `unknown`                | restart recovery and legacy quarantine tests                           |
+| Kill and resource cleanup were folded into terminal attempt updates      | independent `cleanup.json` with requirements, append-only observations, and monotonic revisions              | immutable-terminal and converging-cleanup tests                        |
+| Cleanup failure could be hidden by a successful worker                   | queue/retry/removal require proven cleanup; reconciliation and `get_attempt_cleanup` expose unresolved state | injected external and workspace cleanup failures                       |
+| Git worktree removal could outlive its caller                            | resolved Git executable runs under the same Job boundary and one bounded workspace-cleanup deadline          | orchestration cleanup integration and process timeout characterization |
+
+This extension closes HARD-003 only for the named Windows profile and closes
+HARD-004. It does not close public queue/attempt repair, evidence sealing,
+resource quotas, or a POSIX unattended lane.

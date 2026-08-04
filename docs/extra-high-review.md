@@ -5,29 +5,37 @@ Resolved items retain their residual boundaries so later work cannot silently
 widen them.
 
 > **Ultra follow-up, 2026-08-04:** the implementation review at `5bf3cf2`
-> reopened parts of the first two outcomes below. A normal worker exit can leave
-> a detached descendant alive; kill failure is swallowed; concurrent callers
-> can claim one reserved attempt twice; a missing/malformed lease record can
-> wedge dispatch; and some quarantine states lack a public recovery path. The
-> sections below preserve the intended design and evidence that did pass, but
-> they are not current unattended-readiness claims. The corrective gates live
-> in `vesserin-backend-generation-plan.md`.
+> reopened the first two outcomes below. Attempt fencing, pre-launch recovery,
+> lease repair, and the supported Windows process/cleanup boundary were later
+> closed by the revisions named in their sections. Public convergence, complete
+> review-evidence binding, and resource ceilings remain open; no individual
+> closure is a claim of unattended readiness. The remaining corrective gates
+> live in `vesserin-backend-generation-plan.md`.
 
 ## Orphan process recovery
 
-**Outcome: guardian implementation exists; unattended closure reopened.** Every
-command is launched through a separate Node guardian. Its identity is persisted
-before the guarded worker starts, and an ownership pipe makes dispatcher death
-trigger the guardian's termination path. Recovery never kills a bare PID.
-Guardian events use a nonce-bound control channel separate from worker stdout
-and stderr. Existing adversarial tests prove worker log bytes cannot spoof exit
-evidence and cover owner-crash cleanup for the exercised process shape.
+**Outcome: resolved for the supported Windows lane by `caae1c8`, `726e1cf`,
+`3afab31`, and `77c2b54`.** Every command is launched through a separate
+guardian owned by a PowerShell 7 Windows Job host. The Job is configured and
+verified for kernel kill-on-close before Conductor authorizes worker start; its
+v2 identity and containment claim are persisted first. Recovery never kills a
+bare PID. Guardian events use a nonce-bound control channel separate from
+worker stdout and stderr, so worker bytes cannot spoof ownership or exit
+evidence.
 
-Unmet exit: a direct worker can exit while a detached descendant survives, kill
-failure is not durably acknowledged, and guardian disappearance does not prove
-complete tree absence. OS-enforced process ownership, normal-exit descendant
-tests, cleanup evidence, and actionable reconciliation must pass before this
-outcome can be called resolved for automatic retry.
+Normal root exit, cancellation, timeout, owner crash, early cancellation during
+host startup, detached Node and Bun descendants, and delayed canaries are
+covered. Termination observations and process/resource/workspace cleanup live
+in a separate versioned record; failed or unknown cleanup blocks retry without
+rewriting the terminal worker result. Bounded Git worktree removal is inside the
+same process boundary.
+
+Residual boundary: PowerShell 7 startup is currently paid per command and is a
+performance cost, not an authority shortcut. The POSIX process-group fallback
+cannot prove that a descendant did not create a new session, so its result is
+`unknown`; qualify cgroup-backed ownership before declaring a POSIX unattended
+lane. HARD-006 still governs public resolution of unrelated queue/attempt
+quarantines.
 
 ## Lease stealing and filesystem semantics
 

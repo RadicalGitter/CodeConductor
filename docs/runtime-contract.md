@@ -1,6 +1,6 @@
 # Runtime contract
 
-- Status: implemented first slice; unattended hardening reopened
+- Status: implemented local core; remaining unattended gates tracked
 - MCP contract version: `v1`
 - Queue and attempt record version: `v2` (`v1` remains readable)
 
@@ -24,6 +24,7 @@
 | `set_contract_watch`          | Enables or disables a persisted watch                              |
 | `poll_contract_watches`       | Runs one immediate watch cycle                                     |
 | `get_attempt`                 | Reads a durable attempt manifest                                   |
+| `get_attempt_cleanup`         | Reads independent cleanup requirements and observations            |
 | `get_verification`            | Reads typed deterministic verification evidence                    |
 | `get_review_bundle`           | Reads a bounded review packet; only its patch is revalidated today |
 | `read_attempt_artifact`       | Reads a bounded named artifact without arbitrary path access       |
@@ -47,6 +48,8 @@ may execute concurrently; each mutating attempt has its own worktree.
     attempts/<attempt-id>/
       attempt.json
       transitions/<revision>/attempt.json
+      cleanup.json
+      cleanup-transitions/<revision>/cleanup.json
       stdout.log
       stderr.log
       proposal.patch
@@ -76,6 +79,14 @@ if the process stops before projection. A stale writer cannot overwrite a newer
 revision. Existing v1 records without `revision` read as revision zero and are
 upgraded to the v2 record schema on their next transition. Newly reserved
 attempts and queue items are v2.
+
+Attempt reservation also publishes `cleanup.json` atomically. Its
+`conductor.attempt-cleanup/v1` record registers process-tree,
+external-resource, and workspace subjects with deadlines, then appends typed
+`proven`, `failed`, or `unknown` observations through its own monotonic revision
+journal. The latest observation for each required subject derives current
+cleanup status; prior negative observations remain durable. Attempt terminal
+records cannot be rewritten by cleanup or review updates.
 
 Every dispatch writes one UUID `dispatchOperationId` through queue intent,
 attempt reservation, queue binding, and launch claim. The attempt can be
@@ -161,22 +172,28 @@ Startup reconstructs a missing queue-to-attempt link from the operation ID,
 returns intent without an attempt safely to `queued`, cancels unlaunched orphan
 attempts before retry, and scans every nonterminal attempt rather than trusting
 queue visibility alone. Abrupt-process tests cover the four pre-launch
-boundaries. Recovery after workspace creation remains governed by guardian and
-external-resource evidence.
+boundaries. Recovery after workspace creation is governed by the independent
+cleanup record.
 
-Every external command runs below a Node guardian whose identity is persisted
-before the worker starts. Conductor never kills a bare recorded PID during
-recovery. On the current head, guardian disappearance is not sufficient proof
-that all descendants are gone, and a queue item quarantined with a nonterminal
-attempt has no complete public mutation path. Therefore same-host automatic
-retry is not yet a proven unattended contract. The required transition,
-process-ownership, and recovery gates are specified in
-`docs/vesserin-backend-generation-plan.md`.
+On Windows, every external command runs inside a verified kill-on-close Job
+Object whose v2 guardian identity is persisted before the worker starts.
+Conductor never kills a bare recorded PID during recovery. An absent verified
+Job owner proves kernel closure; a live owner remains running; legacy guardian
+disappearance and non-kernel POSIX process-group absence are `unknown` and
+cannot authorize retry. External-resource and workspace subjects must also be
+proven released. Git worktree removal and pruning run as bounded, Job-owned
+processes under one 30-second workspace-cleanup deadline.
+
+A queue item quarantined with an otherwise inconsistent nonterminal attempt
+still has no complete public mutation path. Therefore the process/cleanup
+closure does not establish the broader unattended contract; HARD-006 through
+HARD-008 remain governed by `docs/vesserin-backend-generation-plan.md`.
 
 These semantics are local-host semantics. UNC data roots are rejected. Mapped
 network drives and distributed dispatch are outside this contract.
 
-Queue completion means the worker completed and deterministic evidence was
-eligible. Ineligible successful worker output becomes `needs-input`, not a
-successful dependency. Retrying preserves the prior attempt and reserves a new
-ordinal.
+Queue completion means the worker completed, deterministic evidence was
+eligible, and cleanup is `not-required` or `proven`. Ineligible successful
+worker output or unresolved cleanup becomes `needs-input`, not a successful
+dependency. Retrying preserves the prior attempt, requires safe cleanup, and
+reserves a new ordinal.

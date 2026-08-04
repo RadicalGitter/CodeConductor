@@ -55,7 +55,7 @@ update on the exact implementing revision.
 ## HARD-003 — complete process-tree closure
 
 - Severity: P0
-- State: confirmed; open
+- State: closed for the supported Windows lane by `caae1c8` and `726e1cf`
 - Failure: a direct worker can exit normally while a detached descendant
   survives.
 - Required change: OS-enforced tree ownership on supported hosts, including
@@ -66,11 +66,23 @@ update on the exact implementing revision.
   attempt and blocks retry.
 - Closure updates: architecture, operations, Extra High register, and process
   tests.
+- Evidence: every setup, worker, acceptance, external-cleanup, and bounded Git
+  cleanup command is placed in a Windows Job Object before it is authorized to
+  start. The separately persisted v2 guardian record binds the Job owner and
+  records verified kernel-enforced kill-on-close. Normal root exit,
+  cancellation, timeout, and Conductor owner-crash canaries cover detached
+  Node and Bun descendants and delayed file writes; no canary survives. A
+  launch-gate test proves that missing ownership evidence prevents the worker
+  from starting. Recovery treats an absent verified v2 Job owner as positive
+  closure evidence, while legacy v1 guardians and non-kernel POSIX process
+  groups remain `unknown` and cannot authorize retry. PowerShell 7 is therefore
+  part of the supported Windows runtime profile; no POSIX unattended lane is
+  claimed until an equivalent cgroup-backed implementation is qualified.
 
 ## HARD-004 — termination and cleanup evidence
 
 - Severity: P0
-- State: confirmed; open
+- State: closed by `726e1cf`, `3afab31`, and `77c2b54`
 - Failure: kill or cleanup failure can be swallowed, allowing state to imply
   closure without durable proof.
 - Required change: typed cleanup records separate from immutable terminal
@@ -80,6 +92,20 @@ update on the exact implementing revision.
   never report safe retry or silent completion; reconciliation explains the
   least-authority next action.
 - Closure updates: attempt schema, status/explain surfaces, and cleanup tests.
+- Evidence: attempt reservation atomically creates a versioned `cleanup.json`;
+  requirements and observations advance through an append-only revision
+  journal independently of the immutable terminal worker manifest. Process
+  trees, external resources, and workspaces have typed subjects, deadlines,
+  and `proven`, `failed`, or `unknown` observations. Prior failures remain in
+  history even after a later observation proves closure. Queue completion,
+  retry, recovery, and workspace removal all refuse unresolved cleanup, while
+  `get_attempt_cleanup` and reconciliation expose the exact state. Injected
+  external cleanup and workspace-removal failures preserve the worker outcome,
+  retain the worktree, and block retry. Workspace removal and Git pruning are
+  themselves bounded, OS-owned processes; timeouts or unproved termination are
+  recorded as failure rather than silently detached. The complete repository
+  gate passed with 63 tests and 581 assertions after the final removal gate was
+  added.
 
 ## HARD-005 — malformed or missing lease recovery
 
