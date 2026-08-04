@@ -7,14 +7,19 @@ source.
 
 **Exit:** clean initial commit on `main` and an implementation branch.
 
+**State:** complete at `7538ee4`.
+
 ## Slice 1 — durable single-worker parity
 
 Versioned job/attempt contracts, atomic artifacts, one worktree per mutation,
-process-tree cancellation, Kode/Codex/Claude adapters, MCP tools, and parity
-tests.
+process-tree cancellation, Kode/Codex adapters, MCP tools, and parity tests.
 
 **Exit:** the same disposable canary succeeds through Kode's prototype and
 Conductor with normalized equivalent evidence.
+
+**State:** complete for the Kode/Codex first slice. Standalone characterization
+and the black-box Kode cross-runtime canary pass. A verified Claude Code adapter
+remains a later adapter addition because no `claude` executable is installed.
 
 ## Slice 2 — deterministic preparation and acceptance
 

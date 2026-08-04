@@ -1,0 +1,65 @@
+# Verification record
+
+- Date: 2026-08-04
+- Platform: Windows
+- Bun: 1.3.14
+- Kode behavioral baseline: `328676d0c8f09c30d57dd5c5972a6433f80f6b39`
+
+## Standalone suite
+
+Command:
+
+```powershell
+bun run check
+```
+
+Observed after the first runtime slice: formatting and strict TypeScript pass;
+11 tests pass. The suite covers schema freezing, adapter snapshots, concurrent
+atomic reservation, in-memory MCP discovery, exact-revision worktree
+isolation, asynchronous submission, idempotent replay/conflict rejection,
+proposal capture including untracked files, exact worktree removal, stdout and
+stderr capture, and Windows child-plus-grandchild cancellation.
+
+## Kode reference suite
+
+Command from `Z:\Programmering\Kode-CLI`:
+
+```powershell
+bun test ./packages/mcp-delegate/src/attempts.test.ts ./packages/mcp-delegate/src/backends.test.ts ./packages/mcp-delegate/src/process.test.ts
+```
+
+Observed: 10 tests pass. This independently re-established the baseline's job,
+attempt, backend-invocation, permission-mode, cancellation, timeout, and spawn
+failure behavior.
+
+## Black-box parity smoke
+
+Command:
+
+```powershell
+bun run smoke:kode-parity -- "Z:\Programmering\Kode-CLI"
+```
+
+The script starts both MCP servers as separate stdio subprocesses. It imports
+no Kode module. Both receive the same disposable Git repository and harmless
+fake worker executable.
+
+Observed:
+
+- both attempts completed from the same exact base revision;
+- both left the primary checkout untouched;
+- both produced the requested file only in their isolated worktrees;
+- both persisted separate stdout and stderr artifacts;
+- Conductor additionally captured a proposal patch and repository status;
+- replay was duplicate-free in both runtimes;
+- Conductor submission returned `reserved` before completion, demonstrating
+  the intended asynchronous producer/poller contract;
+- both worktrees were removed through their public MCP cleanup tools.
+
+The first smoke run failed for a useful reason: the reference runtime stores
+artifact paths as strings, while the initial probe expected `{ path }` objects.
+The black-box script was corrected to the observed public result shape and the
+entire smoke then passed. No product behavior was changed to hide the mismatch.
+
+This smoke verifies orchestration parity, not model quality, dependency setup,
+path enforcement, acceptance checks, or hostile-code containment.

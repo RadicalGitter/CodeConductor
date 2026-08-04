@@ -8,20 +8,20 @@
 This is interface and workflow compatibility, not source extraction. Baseline
 source remains available only as historical evidence until parity is accepted.
 
-| Workflow or contract                                     | Baseline evidence              | Target owner                | Status  | Verification                |
-| -------------------------------------------------------- | ------------------------------ | --------------------------- | ------- | --------------------------- |
-| List available Kode/Codex/Claude backends                | MCP `list_delegate_backends`   | Worker registry             | pending | MCP characterization        |
-| Create sibling worktree at exact base revision           | Returned `WorktreeHandle`      | Workspace manager           | pending | temporary Git fixture       |
-| Explicit conservative permission defaults                | Adapter argument builders      | Worker adapters             | pending | invocation snapshots        |
-| Stable job and attempt IDs                               | `kode-delegate-result/v2`      | Job store                   | pending | duplicate/retry tests       |
-| Freeze objective/repository/base ref                     | `job.json`                     | Job store                   | pending | mismatch rejection test     |
-| Durable atomic attempt manifest                          | `manifest.json`                | Artifact store              | pending | restart/readback test       |
-| Store stdout/stderr separately                           | attempt artifacts              | Artifact store              | pending | content/hash test           |
-| Distinguish timeout/cancel/spawn/backend/harness failure | manifest fields                | Process runner/orchestrator | pending | lifecycle tests             |
-| MCP cancellation reaches complete Windows process tree   | `AbortSignal`, `taskkill /T`   | Process runner              | pending | child-and-grandchild canary |
-| Retain worktree after completion or cancellation         | explicit cleanup tool          | Workspace manager           | pending | lifecycle smoke             |
-| Explicit worktree removal                                | MCP `remove_delegate_worktree` | Workspace manager           | pending | exact-target test           |
-| Caller-specified attempt replay is idempotent            | duplicate result               | Orchestrator                | pending | same-ID no-respawn test     |
+| Workflow or contract                                     | Baseline evidence              | Target owner                | Status      | Verification                                               |
+| -------------------------------------------------------- | ------------------------------ | --------------------------- | ----------- | ---------------------------------------------------------- |
+| List available Kode/Codex/Claude backends                | MCP `list_delegate_backends`   | Worker registry             | partial     | Kode/Codex MCP characterization; Claude and probes pending |
+| Create sibling worktree at exact base revision           | Returned `WorktreeHandle`      | Workspace manager           | implemented | disposable Git integration test                            |
+| Explicit conservative permission defaults                | Adapter argument builders      | Worker adapters             | implemented | Kode safe and Codex workspace-write snapshots              |
+| Stable job and attempt IDs                               | `kode-delegate-result/v2`      | Job store                   | implemented | concurrent reservation and replay tests                    |
+| Freeze objective/repository/base ref                     | `job.json`                     | Job store                   | implemented | schema, exact revision, and mismatch rejection             |
+| Durable atomic attempt manifest                          | `manifest.json`                | Artifact store              | implemented | concurrent atomic reservation/readback                     |
+| Store stdout/stderr separately                           | attempt artifacts              | Artifact store              | implemented | process and orchestration content tests                    |
+| Distinguish timeout/cancel/spawn/backend/harness failure | manifest fields                | Process runner/orchestrator | partial     | typed failures; full lifecycle matrix pending              |
+| MCP cancellation reaches complete Windows process tree   | `AbortSignal`, `taskkill /T`   | Process runner              | implemented | child-and-grandchild canary                                |
+| Retain worktree after completion or cancellation         | explicit cleanup tool          | Workspace manager           | implemented | orchestration lifecycle test                               |
+| Explicit worktree removal                                | MCP `remove_delegate_worktree` | Workspace manager           | implemented | exact recorded target and managed-root check               |
+| Caller-specified attempt replay is idempotent            | duplicate result               | Orchestrator                | implemented | same-key no-respawn and conflicting-key rejection          |
 
 ## Deliberate first-version changes
 
@@ -42,3 +42,12 @@ source remains available only as historical evidence until parity is accepted.
 - `needs-input` existed in the type vocabulary but was not parsed from worker
   output.
 - Full-suite evidence was impractical to obtain inside short test bounds.
+
+## Parity exit evidence
+
+The same disposable canary has run through Kode's `328676d` delegate prototype
+and Conductor as separate MCP subprocesses. Both completed from the same
+revision, isolated the primary checkout, persisted output, replayed without a
+second spawn, and removed their worktrees through public tools. See
+[`verification.md`](verification.md). No Kode implementation source is imported
+or linked.
