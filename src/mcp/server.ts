@@ -266,6 +266,22 @@ export function createMcpServer(
   );
 
   server.registerTool(
+    "get_review_bundle",
+    {
+      title: "Get hash-bound review bundle",
+      description:
+        "Create or read a durable advisory review packet bound to the frozen contract and evidence hashes, plus a bounded proposal patch. This does not accept, merge, or mutate project state.",
+      inputSchema: {
+        attemptId: z.string().min(1),
+        maxPatchBytes: z.number().int().min(1).max(1_000_000).default(500_000),
+      },
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async ({ attemptId, maxPatchBytes }) =>
+      toolResult(await conductor.getReviewBundle(attemptId, maxPatchBytes)),
+  );
+
+  server.registerTool(
     "read_attempt_artifact",
     {
       title: "Read bounded attempt artifact",

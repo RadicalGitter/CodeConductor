@@ -10,6 +10,12 @@ import {
 } from "../contracts/job.js";
 import { runProcess } from "../runtime/process-runner.js";
 import { selectParentEnvironment } from "../runtime/environment.js";
+import {
+  buildReviewPacket,
+  reviewPacketSchema,
+  sha256File,
+  type ReviewPacket,
+} from "../review/packet.js";
 import { ArtifactStore } from "../storage/artifact-store.js";
 import {
   GitWorkspaceManager,
@@ -142,6 +148,74 @@ export class Conductor {
     return verificationRecordSchema.parse(
       JSON.parse(await readFile(manifest.artifacts.verification, "utf8")),
     );
+  }
+
+  async getReviewPacket(attemptId: string): Promise<ReviewPacket> {
+    const manifest = await this.getAttempt(attemptId);
+    if (
+      !["completed", "failed", "needs-input", "cancelled"].includes(
+        manifest.status,
+      )
+    ) {
+      throw new Error(`Attempt ${attemptId} is not terminal`);
+    }
+    const target = path.join(
+      path.dirname(manifest.artifacts.manifest),
+      "review-packet.json",
+    );
+    try {
+      return reviewPacketSchema.parse(
+        JSON.parse(await readFile(target, "utf8")),
+      );
+    } catch (error) {
+      if (!(
+        error instanceof Error &&
+        "code" in error &&
+        error.code === "ENOENT"
+      )) {
+        throw error;
+      }
+    }
+
+    const contract = await this.store.readJob(manifest.jobId);
+    const verification = await this.getVerification(attemptId);
+    const changedPaths = JSON.parse(
+      await readFile(manifest.artifacts.changedPaths, "utf8"),
+    ) as unknown;
+    if (
+      !Array.isArray(changedPaths) ||
+      !changedPaths.every((entry) => typeof entry === "string")
+    ) {
+      throw new Error(`Invalid changed-path evidence for ${attemptId}`);
+    }
+    const packet = await buildReviewPacket({
+      contract,
+      manifest,
+      verification,
+      changedPaths,
+    });
+    await this.store.writeJsonAtomic(target, packet);
+    return packet;
+  }
+
+  async getReviewBundle(attemptId: string, maxPatchBytes = 500_000) {
+    const packet = await this.getReviewPacket(attemptId);
+    const patchBinding = packet.bindings.find(
+      (binding) => binding.name === "proposalPatch",
+    );
+    if (
+      !patchBinding?.available ||
+      !patchBinding.sha256 ||
+      (await sha256File(patchBinding.path)) !== patchBinding.sha256
+    ) {
+      throw new Error(`Proposal patch evidence changed for ${attemptId}`);
+    }
+    const patch = await this.readAttemptArtifact(
+      attemptId,
+      "proposalPatch",
+      maxPatchBytes,
+    );
+    return { packet, patch };
   }
 
   async readAttemptArtifact(

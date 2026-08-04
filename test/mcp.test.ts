@@ -35,6 +35,7 @@ test("publishes the provider-neutral MCP tool contract", async () => {
       "enqueue_contract_sources",
       "get_attempt",
       "get_queue_item",
+      "get_review_bundle",
       "get_verification",
       "list_contract_watches",
       "list_queue",

@@ -10,6 +10,8 @@
   },
   "scripts": {
     "start:mcp": "bun src/cli.ts",
+    "configure:kode-local": "bun scripts/configure-local-kode.ts",
+    "doctor": "bun scripts/runtime-doctor.ts",
     "smoke:kode-parity": "bun scripts/kode-parity-smoke.ts",
     "smoke:kode-live": "bun scripts/live-kode-canary.ts",
     "typecheck": "tsc --noEmit",

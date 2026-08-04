@@ -114,3 +114,31 @@ The suite now has 22 tests and 124 assertions. It additionally proves that:
   order, and persist a source-run manifest;
 - a persisted watch enqueues only once for an unchanged revision and observes
   a newly committed revision on the next poll.
+
+## Live unattended gameplay lane
+
+`bun run smoke:kode-live` now creates a disposable gameplay repository with a
+committed `@conductor-contract`, registers a watch, polls the exact revision,
+enqueues through the durable dispatcher, invokes the compiled Kode fork against
+the already-running local model, applies positive path scope, and runs an
+owner-profiled Node acceptance test.
+
+The final observed run used
+`KAT-Coder-V2.5-Dev-APEX-I-Balanced.gguf` at 65,536 context tokens. It completed
+the full chain in 12.6 seconds, changed only `gameplay/health.js`, passed the
+focused test, and ended with queue `completed`, attempt `completed`, and
+verification `eligible`. Evidence is under
+`C:\Users\oscar\.conductor\canaries\2026-08-04T04-40-24-922Z`.
+
+Two preceding negatives are intentionally retained. The unrestricted built-in
+tool set caused repeated denied shell/delegation attempts and a 157-second
+worker run. Removing command tools without removing their responsibility from
+the prompt caused fourteen invented runner files; the scope gate rejected all
+of them. A later source-driven run invented one status file and was likewise
+quarantined. Assigning commands exclusively to Conductor and removing `Write`
+when every allowed target is an existing file produced the final fast,
+scope-clean result.
+
+The suite now also creates idempotent hash-bound review packets and proves that
+tampering with the proposal patch after packet creation makes review-bundle
+retrieval fail.

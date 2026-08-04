@@ -71,7 +71,9 @@ See [the architecture](docs/architecture.md),
 [roadmap](docs/roadmap.md). Decisions intentionally reserved for stronger
 review are tracked in [the Extra High register](docs/extra-high-review.md).
 The in-code contract syntax and automatic watch behavior are documented in
-[source contracts](docs/source-contracts.md).
+[source contracts](docs/source-contracts.md). The concrete local-model setup,
+doctor, lifecycle, recovery, live evidence, and semantic-review handoff are in
+[unattended operations](docs/operations.md).
 
 ## Important current boundary
 

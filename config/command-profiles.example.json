@@ -1,0 +1,15 @@
+{
+  "schema": "conductor.command-profiles/v1",
+  "profiles": {
+    "node-test": {
+      "executable": "C:\\Program Files\\nodejs\\node.exe",
+      "argsPrefix": ["--test"],
+      "inheritEnv": []
+    },
+    "bun-test": {
+      "executable": "C:\\Users\\YOUR_USER\\.bun\\bin\\bun.exe",
+      "argsPrefix": ["test", "--"],
+      "inheritEnv": []
+    }
+  }
+}

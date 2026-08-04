@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -81,6 +81,31 @@ test("runs a durable proposal in an exact-revision worktree and replays idempote
     const manifest = await conductor.getAttempt(result.attemptId);
     expect(manifest.workspace?.baseRevision).toBe(repository.revision);
     expect(manifest.reviewDisposition).toBe("not-requested");
+
+    const firstReview = await conductor.getReviewBundle(result.attemptId);
+    const secondReview = await conductor.getReviewBundle(result.attemptId);
+    expect(firstReview.packet.schema).toBe("conductor.review-packet/v1");
+    expect(firstReview.packet.authority).toBe("advisory-review-only");
+    expect(firstReview.packet.changedPaths).toEqual(["generated.txt"]);
+    expect(firstReview.patch.text).toContain("generated.txt");
+    expect(secondReview.packet).toEqual(firstReview.packet);
+    expect(
+      firstReview.packet.bindings.find(
+        (binding) => binding.name === "proposalPatch",
+      )?.sha256,
+    ).toMatch(/^[a-f0-9]{64}$/);
+    const originalPatch = await readFile(
+      result.artifacts.proposalPatch,
+      "utf8",
+    );
+    await writeFile(
+      result.artifacts.proposalPatch,
+      `${originalPatch}\ntampered\n`,
+    );
+    await expect(conductor.getReviewBundle(result.attemptId)).rejects.toThrow(
+      "Proposal patch evidence changed",
+    );
+    await writeFile(result.artifacts.proposalPatch, originalPatch);
 
     const replay = await conductor.runJob(request);
     expect(replay.idempotentReplay).toBe(true);

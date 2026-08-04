@@ -74,6 +74,13 @@ bounded correction attempts, reviewer ablation metrics, and compact handoff.
 **Exit:** review measurably improves hidden-check survival or is disabled as an
 uneconomic route.
 
+**State:** packet foundation implemented. Eligible terminal attempts can emit
+a durable advisory packet containing the frozen contract, verification,
+changed paths, evidence hashes, and a bounded patch. Patch tampering is detected
+before handoff. No reviewer is invoked and no finding can accept or mutate work;
+reviewer adapters, typed persisted findings, bounded correction, and ablation
+measurement remain future work.
+
 ## Slice 6 — Vesserin plugin
 
 Impact Atlas context retrieval, Vesserin contract vocabulary, invariant-aware
