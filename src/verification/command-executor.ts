@@ -4,6 +4,7 @@ import { realpath } from "node:fs/promises";
 import type { CommandSpec } from "../contracts/job.js";
 import { selectRequestedEnvironment } from "../runtime/environment.js";
 import { runProcess } from "../runtime/process-runner.js";
+import type { ProcessGuardianIdentity } from "../runtime/process-runner.js";
 import type { CommandEvidence } from "./types.js";
 
 export class ExecutionPolicy {
@@ -79,6 +80,7 @@ export async function executeCommand(input: {
   defaultTimeoutMs: number;
   policy: ExecutionPolicy;
   signal: AbortSignal;
+  onGuardianReady?: (identity: ProcessGuardianIdentity) => void | Promise<void>;
 }): Promise<CommandEvidence> {
   const lexicalCwd = path.resolve(
     input.workspacePath,
@@ -137,6 +139,7 @@ export async function executeCommand(input: {
         stderrPath: stderr,
         timeoutMs: input.command.timeoutMs ?? input.defaultTimeoutMs,
         signal: input.signal,
+        onGuardianReady: input.onGuardianReady,
       },
     );
     return {

@@ -143,7 +143,7 @@ test("compiles tracked source comments into an idempotent dependency queue", asy
     await rm(repository.root, { recursive: true, force: true });
     await rm(dataRoot, { recursive: true, force: true });
   }
-});
+}, 15_000);
 
 test("rejects duplicate, missing, cyclic, and unauthorized source contracts", async () => {
   const repository = await createTestRepository();

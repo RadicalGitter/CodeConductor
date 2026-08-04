@@ -52,6 +52,7 @@ its own worktree.
   queue/
     items/<job-id>/queue.json
     dispatcher.lock/lease.json
+    lease-generation.json
   source-runs/<run-id>/manifest.json
   source-watches/<watch-id>/watch.json
 ```
@@ -83,11 +84,21 @@ names.
 ## Restart semantics
 
 Completed manifests, queue items, and artifacts survive process restart. One
-heartbeat lease owns dispatch. A restarted dispatcher resumes queued work and
-reconstructs compact completion state from terminal attempt manifests. If an
-attempt was active when ownership disappeared, its queue item becomes
-`needs-input`; Conductor does not duplicate it or kill a possibly reused bare
-PID. Automatic orphan retry remains an explicitly reviewed future policy.
+generation-fenced heartbeat lease owns dispatch. A lease can be recovered
+automatically only after expiration, on the same host, when its recorded owner
+process is no longer alive. A live process remains authoritative even after
+machine suspend makes the heartbeat old. Renew and release require the exact
+owner, instance, and generation; an old owner cannot remove a newer lock.
+
+Every external command runs below a Node guardian whose identity is persisted
+before the worker starts. The guardian owns the process tree and kills it when
+Conductor's ownership pipe closes. On restart, a merely reserved attempt is
+cancelled and retried as a new attempt. An active attempt is retried only after
+its recorded guardian is gone; a live guardian or missing identity becomes
+`needs-input`. Conductor never kills a bare recorded PID during recovery.
+
+These semantics are local-host semantics. UNC data roots are rejected. Mapped
+network drives and distributed dispatch are outside this contract.
 
 Queue completion means the worker completed and deterministic evidence was
 eligible. Ineligible successful worker output becomes `needs-input`, not a

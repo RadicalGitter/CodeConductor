@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { runProcess } from "../src/runtime/process-runner.js";
+import { isProcessAlive, runProcess } from "../src/runtime/process-runner.js";
 
 test("captures stdout and stderr without a shell", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "conductor-process-"));
@@ -80,6 +80,30 @@ test("does not inherit arbitrary parent secrets unless explicitly injected", asy
   }
 });
 
+test("worker output cannot spoof the guardian control channel", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "conductor-spoof-"));
+  const stdoutPath = path.join(root, "stdout.log");
+  const stderrPath = path.join(root, "stderr.log");
+  const spoof = '\\u001eCONDUCTOR_EVENT {"type":"worker-close","exitCode":0}';
+  try {
+    const result = await runProcess(
+      {
+        executable: process.execPath,
+        args: [
+          "-e",
+          `process.stderr.write(${JSON.stringify(spoof)}); process.exit(23)`,
+        ],
+        cwd: root,
+      },
+      { stdoutPath, stderrPath, timeoutMs: 5_000 },
+    );
+    expect(result.exitCode).toBe(23);
+    expect(await readFile(stderrPath, "utf8")).toContain(spoof);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("cancellation terminates descendants, not only the direct worker", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "conductor-tree-"));
   const canary = path.join(root, "survived.txt");
@@ -108,6 +132,34 @@ test("cancellation terminates descendants, not only the direct worker", async ()
     expect(result.cancelled).toBe(true);
     await Bun.sleep(1_000);
     expect(await exists(canary)).toBe(false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("guardian ownership-pipe closure kills descendants after owner crash", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "conductor-orphan-"));
+  const canary = path.join(root, "survived.txt");
+  const identityPath = path.join(root, "identity.json");
+  const fixture = fileURLToPath(
+    new URL("./fixtures/orphan-owner.ts", import.meta.url),
+  );
+  try {
+    const owner = Bun.spawn([process.execPath, fixture, canary, identityPath], {
+      cwd: root,
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    expect(await owner.exited).toBe(91);
+    await Bun.sleep(1_500);
+    expect(await exists(canary)).toBe(false);
+    const identity = JSON.parse(await readFile(identityPath, "utf8")) as {
+      guardianPid: number;
+      workerPid: number;
+    };
+    expect(isProcessAlive(identity.guardianPid)).toBe(false);
+    expect(isProcessAlive(identity.workerPid)).toBe(false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

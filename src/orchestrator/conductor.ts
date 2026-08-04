@@ -8,7 +8,11 @@ import {
   jobRequestSchema,
   type JobContract,
 } from "../contracts/job.js";
-import { runProcess } from "../runtime/process-runner.js";
+import {
+  isProcessAlive,
+  runProcess,
+  type ProcessGuardianIdentity,
+} from "../runtime/process-runner.js";
 import { selectParentEnvironment } from "../runtime/environment.js";
 import {
   buildReviewPacket,
@@ -278,6 +282,53 @@ export class Conductor {
     });
   }
 
+  async recoverInterruptedAttempt(
+    attemptId: string,
+    guardianExitGraceMs = 5_000,
+  ): Promise<{
+    disposition: "terminal" | "safe-to-retry" | "still-running" | "unknown";
+    manifest: AttemptManifest;
+  }> {
+    let manifest = await this.getAttempt(attemptId);
+    if (isAttemptTerminal(manifest.status)) {
+      return { disposition: "terminal", manifest };
+    }
+    if (manifest.status === "reserved") {
+      manifest = await this.update(manifest, {
+        status: "cancelled",
+        finishedAt: new Date().toISOString(),
+        verificationStatus: "ineligible",
+        failure: {
+          kind: "orphaned",
+          message:
+            "Reserved attempt lost dispatcher ownership before execution",
+        },
+      });
+      return { disposition: "safe-to-retry", manifest };
+    }
+    if (!manifest.guardian) {
+      return { disposition: "unknown", manifest };
+    }
+    if (isProcessAlive(manifest.guardian.guardianPid)) {
+      await delay(guardianExitGraceMs);
+      manifest = await this.getAttempt(attemptId);
+      if (manifest.guardian && isProcessAlive(manifest.guardian.guardianPid)) {
+        return { disposition: "still-running", manifest };
+      }
+    }
+    manifest = await this.update(manifest, {
+      status: "failed",
+      finishedAt: new Date().toISOString(),
+      verificationStatus: "ineligible",
+      failure: {
+        kind: "orphaned",
+        message:
+          "Recorded process guardian is no longer alive; its ownership pipe closed before retry",
+      },
+    });
+    return { disposition: "safe-to-retry", manifest };
+  }
+
   async removeAttemptWorkspace(attemptId: string): Promise<AttemptManifest> {
     const manifest = await this.getAttempt(attemptId);
     if (
@@ -364,6 +415,9 @@ export class Conductor {
           defaultTimeoutMs: contract.execution.timeoutMs,
           policy: this.executionPolicy,
           signal: abortController.signal,
+          onGuardianReady: async (identity) => {
+            manifest = await this.update(manifest, { guardian: identity });
+          },
         });
         const repositoryClean =
           (await captureGit(workspace.path, [
@@ -424,6 +478,15 @@ export class Conductor {
         stderrPath: manifest.artifacts.stderr,
         timeoutMs: contract.execution.timeoutMs,
         signal: abortController.signal,
+        onGuardianReady: async (identity) => {
+          manifest = await this.update(manifest, { guardian: identity });
+        },
+        onSpawn: async (workerPid) => {
+          if (!manifest.guardian) return;
+          manifest = await this.update(manifest, {
+            guardian: { ...manifest.guardian, workerPid },
+          });
+        },
       });
       let proposal: ProposalCapture;
       try {
@@ -531,6 +594,9 @@ export class Conductor {
             defaultTimeoutMs: contract.execution.timeoutMs,
             policy: this.executionPolicy,
             signal: abortController.signal,
+            onGuardianReady: async (identity) => {
+              manifest = await this.update(manifest, { guardian: identity });
+            },
           });
           const finalPatch = await captureCurrentPatch(workspace);
           const proposalStable = finalPatch === proposal.patch;
@@ -726,6 +792,7 @@ async function runCommandSequence(input: {
   defaultTimeoutMs: number;
   policy: ExecutionPolicy;
   signal: AbortSignal;
+  onGuardianReady?: (identity: ProcessGuardianIdentity) => void | Promise<void>;
 }): Promise<CommandEvidence[]> {
   const evidence: CommandEvidence[] = [];
   for (const [index, command] of input.commands.entries()) {
@@ -738,6 +805,7 @@ async function runCommandSequence(input: {
       defaultTimeoutMs: input.defaultTimeoutMs,
       policy: input.policy,
       signal: input.signal,
+      onGuardianReady: input.onGuardianReady,
     });
     evidence.push(result);
     if (result.status !== "passed") break;
@@ -799,4 +867,12 @@ function classifyFailure(
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isAttemptTerminal(status: AttemptManifest["status"]): boolean {
+  return ["completed", "failed", "needs-input", "cancelled"].includes(status);
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

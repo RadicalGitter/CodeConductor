@@ -53,9 +53,13 @@ export type QueueItem = z.infer<typeof queueItemSchema>;
 export type QueueItemStatus = z.infer<typeof queueItemStatusSchema>;
 
 export const dispatcherLeaseSchema = z.object({
-  schema: z.literal("conductor.dispatcher-lease/v1"),
+  schema: z.literal("conductor.dispatcher-lease/v2"),
   ownerId: z.string().min(1),
+  instanceId: z.string().uuid(),
+  generation: z.number().int().positive(),
+  hostname: z.string().min(1),
   processId: z.number().int().positive(),
+  processStartedAt: z.string().datetime(),
   acquiredAt: z.string().datetime(),
   heartbeatAt: z.string().datetime(),
   expiresAt: z.string().datetime(),

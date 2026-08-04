@@ -77,13 +77,21 @@ does not re-enter the pipeline under another name.
 `CONDUCTOR_MAX_CONCURRENT` limits simultaneous isolated workers. Start with the
 number of validated llama.cpp slots; the current local canary uses one worker,
 while the deterministic suite proves concurrency two. Queue state and source
-watches survive process restart. Work that was only queued resumes. Work found
-in an active state after ownership loss is quarantined as `needs-input` rather
-than duplicated or killed by PID guesswork.
+watches survive process restart. Work that was only queued resumes.
 
-This lease is intentionally single-machine. Do not place the runtime data
-directory on SMB or treat Tailscale access as distributed queue ownership until
-the Extra High lease review is complete.
+Every external command has a separate process guardian. If Conductor crashes,
+the guardian observes ownership-pipe closure and kills the complete worker
+tree. A replacement dispatcher retries the job as a new attempt only after the
+recorded guardian is gone. A live guardian or missing process identity is
+quarantined as `needs-input`; recovery never kills a bare PID. This favors a
+safe false-positive quarantine over duplicate mutation or PID-reuse damage.
+
+The generation-fenced queue lease is intentionally single-machine. Expired
+heartbeats are not stolen from live local processes, which makes suspend safe.
+UNC runtime roots are rejected. Do not place the runtime data directory on SMB,
+a mapped network drive, or treat Tailscale access as distributed queue
+ownership. Run the dispatcher on the machine that owns its local data root and
+expose its bounded control API instead.
 
 ## Evidence from the first live lane
 

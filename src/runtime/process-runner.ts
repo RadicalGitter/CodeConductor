@@ -1,8 +1,12 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdir, open } from "node:fs/promises";
 import path from "node:path";
+import type { Readable, Writable } from "node:stream";
+import { fileURLToPath } from "node:url";
 
 import { selectParentEnvironment } from "./environment.js";
+import { resolveExecutablePath } from "./executable.js";
 
 export interface ProcessInvocation {
   executable: string;
@@ -11,12 +15,21 @@ export interface ProcessInvocation {
   env?: Record<string, string>;
 }
 
+export interface ProcessGuardianIdentity {
+  schema: "conductor.process-guardian/v1";
+  nonce: string;
+  guardianPid: number;
+  parentPid: number;
+  createdAt: string;
+}
+
 export interface ProcessRunOptions {
   stdoutPath: string;
   stderrPath: string;
   timeoutMs: number;
   signal?: AbortSignal;
   onSpawn?: (pid: number) => void | Promise<void>;
+  onGuardianReady?: (identity: ProcessGuardianIdentity) => void | Promise<void>;
 }
 
 export interface ProcessResult {
@@ -51,25 +64,62 @@ export async function runProcess(
   let timedOut = false;
   let cancelled = false;
   let termination: Promise<void> | undefined;
+  let control: Writable | undefined;
 
   try {
-    const child = spawn(invocation.executable, invocation.args, {
+    const nonce = randomUUID();
+    const guardianEntry = fileURLToPath(
+      new URL("./process-guardian.mjs", import.meta.url),
+    );
+    const guardianExecutable = resolveExecutablePath(
+      process.env.CONDUCTOR_GUARDIAN_NODE_BIN ?? "node",
+    );
+    if (!guardianExecutable) {
+      throw new Error(
+        "A real Node executable is required for process guardians",
+      );
+    }
+    const guardian = spawn(guardianExecutable, [guardianEntry, nonce], {
       cwd: invocation.cwd,
-      env: { ...selectParentEnvironment(), ...invocation.env },
+      env: selectParentEnvironment(),
       shell: false,
       windowsHide: true,
-      detached: process.platform !== "win32",
-      stdio: ["ignore", "pipe", "pipe"],
+      detached: false,
+      stdio: ["pipe", "pipe", "pipe", stdout.fd, stderr.fd],
     });
+    guardian.stderr!.pipe(stderr.createWriteStream());
+    control = guardian.stdin!;
+    let workerPid: number | undefined;
+    let workerClose:
+      { exitCode: number | null; signal: NodeJS.Signals | null } | undefined;
+    let callbackChain = Promise.resolve();
 
-    child.stdout.pipe(stdout.createWriteStream());
-    child.stderr.pipe(stderr.createWriteStream());
+    readGuardianEvents(
+      guardian.stdout!,
+      stderr.createWriteStream(),
+      (event) => {
+        if (event.nonce !== nonce) return;
+        if (event.type === "worker-spawn" && event.pid) {
+          workerPid = event.pid;
+          callbackChain = callbackChain.then(() =>
+            options.onSpawn?.(event.pid!),
+          );
+        } else if (event.type === "worker-close") {
+          workerClose = {
+            exitCode: event.exitCode ?? null,
+            signal: event.signal ?? null,
+          };
+        }
+      },
+    );
 
     const terminate = (reason: "timeout" | "cancelled"): void => {
-      if (!child.pid || termination) return;
+      if (!guardian.pid || termination) return;
       timedOut = reason === "timeout";
       cancelled = reason === "cancelled";
-      termination = terminateProcessTree(child.pid);
+      control?.end();
+      termination = terminateProcessTree(guardian.pid);
+      void termination.catch(() => undefined);
     };
 
     const timeout = setTimeout(() => terminate("timeout"), options.timeoutMs);
@@ -78,19 +128,53 @@ export async function runProcess(
 
     try {
       const result = await new Promise<ProcessResult>((resolve, reject) => {
-        child.once("error", reject);
-        child.once("spawn", () => {
-          if (child.pid) void options.onSpawn?.(child.pid);
+        guardian.once("error", reject);
+        guardian.once("spawn", () => {
+          if (!guardian.pid) {
+            reject(new Error("Process guardian started without a pid"));
+            return;
+          }
+          const identity: ProcessGuardianIdentity = {
+            schema: "conductor.process-guardian/v1",
+            nonce,
+            guardianPid: guardian.pid,
+            parentPid: process.pid,
+            createdAt: new Date().toISOString(),
+          };
+          callbackChain = callbackChain
+            .then(() => options.onGuardianReady?.(identity))
+            .then(() => {
+              control!.write(
+                `${JSON.stringify({
+                  schema: "conductor.guardian-start/v1",
+                  nonce,
+                  invocation: {
+                    executable: invocation.executable,
+                    args: invocation.args,
+                    cwd: invocation.cwd,
+                    env: {
+                      ...selectParentEnvironment(),
+                      ...invocation.env,
+                    },
+                  },
+                })}\n`,
+              );
+            })
+            .catch(reject);
         });
-        child.once("close", (exitCode, signal) => {
-          resolve({
-            pid: child.pid,
-            exitCode,
-            signal,
-            timedOut,
-            cancelled,
-            durationMs: Math.round(performance.now() - started),
-          });
+        guardian.once("close", (exitCode, signal) => {
+          void callbackChain.then(
+            () =>
+              resolve({
+                pid: workerPid,
+                exitCode: workerClose?.exitCode ?? exitCode,
+                signal: workerClose?.signal ?? signal,
+                timedOut,
+                cancelled,
+                durationMs: Math.round(performance.now() - started),
+              }),
+            reject,
+          );
         });
       });
       await termination;
@@ -98,10 +182,47 @@ export async function runProcess(
     } finally {
       clearTimeout(timeout);
       options.signal?.removeEventListener("abort", onAbort);
+      control.end();
     }
   } finally {
     await Promise.allSettled([stdout.close(), stderr.close()]);
   }
+}
+
+type GuardianEvent = {
+  type?: string;
+  nonce?: string;
+  pid?: number;
+  exitCode?: number | null;
+  signal?: NodeJS.Signals | null;
+};
+
+function readGuardianEvents(
+  stream: Readable,
+  output: Writable,
+  receive: (event: GuardianEvent) => void,
+): void {
+  const prefix = "\u001eCONDUCTOR_EVENT ";
+  let buffer = "";
+  stream.setEncoding("utf8");
+  stream.on("data", (chunk: string) => {
+    buffer += chunk;
+    let newline = buffer.indexOf("\n");
+    while (newline >= 0) {
+      const line = buffer.slice(0, newline);
+      buffer = buffer.slice(newline + 1);
+      if (line.startsWith(prefix)) {
+        receive(JSON.parse(line.slice(prefix.length)) as GuardianEvent);
+      } else {
+        output.write(`${line}\n`);
+      }
+      newline = buffer.indexOf("\n");
+    }
+  });
+  stream.once("end", () => {
+    if (buffer) output.write(buffer);
+    output.end();
+  });
 }
 
 export async function terminateProcessTree(pid: number): Promise<void> {
@@ -110,14 +231,21 @@ export async function terminateProcessTree(pid: number): Promise<void> {
   }
 
   if (process.platform === "win32") {
-    await waitForExit(
-      spawn("taskkill.exe", ["/PID", String(pid), "/T", "/F"], {
-        shell: false,
-        windowsHide: true,
-        stdio: "ignore",
-      }),
-      new Set([0, 128]),
-    );
+    try {
+      await waitForExit(
+        spawn("taskkill.exe", ["/PID", String(pid), "/T", "/F"], {
+          shell: false,
+          windowsHide: true,
+          stdio: "ignore",
+        }),
+        new Set([0, 128]),
+      );
+    } catch (error) {
+      for (let attempt = 0; attempt < 20 && isProcessAlive(pid); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      if (isProcessAlive(pid)) throw error;
+    }
     return;
   }
 
@@ -133,6 +261,16 @@ export async function terminateProcessTree(pid: number): Promise<void> {
     process.kill(-pid, "SIGKILL");
   } catch (error) {
     if (!isNoSuchProcess(error)) throw error;
+  }
+}
+
+export function isProcessAlive(pid: number): boolean {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error instanceof Error && "code" in error && error.code === "EPERM";
   }
 }
 

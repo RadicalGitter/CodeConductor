@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 
-import { queuedJobRequestSchema, type QueueItem } from "../contracts/queue.js";
+import {
+  queuedJobRequestSchema,
+  type DispatcherLease,
+  type QueueItem,
+} from "../contracts/queue.js";
 import type { RunJobResult } from "../orchestrator/conductor.js";
 import { Conductor } from "../orchestrator/conductor.js";
 import { QueueStore } from "./queue-store.js";
@@ -21,7 +25,7 @@ export class DurableDispatcher {
   private stateMutation: Promise<void> = Promise.resolve();
   private stopped = true;
   private loop?: Promise<void>;
-  private leaseHeld = false;
+  private lease?: DispatcherLease;
 
   constructor(
     readonly conductor: Conductor,
@@ -164,7 +168,8 @@ export class DurableDispatcher {
 
   private async runLoop(exitWhenIdle: boolean): Promise<void> {
     while (!this.stopped) {
-      await this.queue.renewLease(this.ownerId, this.leaseMs);
+      if (!this.lease) throw new Error("Dispatcher lease is unavailable");
+      this.lease = await this.queue.renewLease(this.lease, this.leaseMs);
       const dispatched = await this.dispatchAvailable();
       if (exitWhenIdle && this.active.size === 0 && dispatched === 0) return;
       if (this.active.size > 0) {
@@ -323,10 +328,25 @@ export class DurableDispatcher {
           verificationStatus: manifest.verificationStatus,
         });
       } else {
-        await this.queue.update(item, {
-          status: "needs-input",
-          message: `Attempt ${item.attemptId} was ${manifest.status} when dispatcher ownership was lost; automatic duplication is prohibited`,
-        });
+        const recovery = await this.conductor.recoverInterruptedAttempt(
+          item.attemptId,
+        );
+        if (recovery.disposition === "safe-to-retry") {
+          await this.queue.update(item, {
+            status: "queued",
+            attemptId: undefined,
+            completion: undefined,
+            message: `Recovered orphan ${item.attemptId}; recorded guardian is gone and a new attempt is safe`,
+          });
+        } else {
+          await this.queue.update(item, {
+            status: "needs-input",
+            message:
+              recovery.disposition === "still-running"
+                ? `Guardian ${recovery.manifest.guardian?.guardianPid} for ${item.attemptId} is still alive; automatic duplication is prohibited`
+                : `Attempt ${item.attemptId} lacks verifiable guardian identity; automatic duplication is prohibited`,
+          });
+        }
       }
     }
   }
@@ -334,13 +354,14 @@ export class DurableDispatcher {
   private async acquireLease(): Promise<void> {
     const lease = await this.queue.acquireLease(this.ownerId, this.leaseMs);
     if (!lease) throw new Error("Another Conductor dispatcher owns the queue");
-    this.leaseHeld = true;
+    this.lease = lease;
   }
 
   private async releaseLease(): Promise<void> {
-    if (!this.leaseHeld) return;
-    this.leaseHeld = false;
-    await this.queue.releaseLease(this.ownerId);
+    if (!this.lease) return;
+    const lease = this.lease;
+    this.lease = undefined;
+    await this.queue.releaseLease(lease);
   }
 
   private async cancelActiveAttempts(): Promise<void> {

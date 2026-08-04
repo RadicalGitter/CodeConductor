@@ -91,9 +91,40 @@ test("single-owner lease and restart recovery prohibit duplicate orphan work", a
   const queue = new QueueStore(store);
 
   try {
-    expect(await queue.acquireLease("owner-one", 5_000)).toBeTruthy();
+    const firstLease = await queue.acquireLease("owner-one", 5_000);
+    expect(firstLease).toBeTruthy();
     expect(await queue.acquireLease("owner-two", 5_000)).toBeUndefined();
-    await queue.releaseLease("owner-one");
+    await store.writeJsonAtomic(
+      path.join(dataRoot, "queue", "dispatcher.lock", "lease.json"),
+      {
+        ...firstLease,
+        heartbeatAt: "2000-01-01T00:00:00.000Z",
+        expiresAt: "2000-01-01T00:00:00.000Z",
+      },
+    );
+    expect(await queue.acquireLease("owner-two", 5_000)).toBeUndefined();
+    await queue.releaseLease(firstLease!);
+    const secondLease = await queue.acquireLease("owner-two", 5_000);
+    expect(secondLease?.generation).toBe(firstLease!.generation + 1);
+    await queue.releaseLease(firstLease!);
+    expect(await queue.renewLease(secondLease!, 5_000)).toMatchObject({
+      instanceId: secondLease!.instanceId,
+    });
+    await queue.releaseLease(secondLease!);
+
+    const deadLease = await queue.acquireLease("owner-dead", 5_000);
+    await store.writeJsonAtomic(
+      path.join(dataRoot, "queue", "dispatcher.lock", "lease.json"),
+      {
+        ...deadLease,
+        processId: 999_999_999,
+        heartbeatAt: "2000-01-01T00:00:00.000Z",
+        expiresAt: "2000-01-01T00:00:00.000Z",
+      },
+    );
+    const recoveredLease = await queue.acquireLease("owner-recovered", 5_000);
+    expect(recoveredLease?.generation).toBe(deadLease!.generation + 1);
+    await queue.releaseLease(recoveredLease!);
 
     const dispatcher = new DurableDispatcher(conductor, queue, {
       pollIntervalMs: 25,
@@ -113,10 +144,10 @@ test("single-owner lease and restart recovery prohibit duplicate orphan work", a
 
     await dispatcher.runUntilIdle();
     const recovered = await queue.read(enqueued.item.jobId);
-    expect(recovered.status).toBe("needs-input");
-    expect(recovered.message).toContain("automatic duplication is prohibited");
+    expect(recovered.status).toBe("completed");
+    expect(recovered.attemptId).not.toBe(reserved.attemptId);
     expect((await conductor.getAttempt(reserved.attemptId)).status).toBe(
-      "reserved",
+      "cancelled",
     );
   } finally {
     await rm(repository.root, { recursive: true, force: true });

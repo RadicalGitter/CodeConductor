@@ -1,26 +1,39 @@
 # Extra High review register
 
-These items are deliberately not resolved under the current reasoning level.
-They do not block conservative unattended proposal generation, but widening
-automation across them requires a fresh Extra High architecture and threat-model
-review.
+This register records the Extra High architecture and threat-model outcomes.
+Resolved items retain their residual boundaries so later work cannot silently
+widen them.
 
 ## Orphan process recovery
 
-Current behavior quarantines an item as `needs-input` when dispatcher ownership
-is recovered while its attempt manifest remains active. It does not kill a
-recorded PID or automatically duplicate the attempt. Before automatic retry,
-design a process identity stronger than a bare PID and validate Windows Job
-Object kill-on-close behavior, PID reuse, machine suspend, and a process that
-outlives its original dispatcher.
+**Outcome: resolved for local-host automatic retry.** Every command is launched
+through a separate Node guardian. Its identity is persisted before the guarded
+worker starts, and an ownership pipe makes dispatcher death trigger complete
+worker-tree termination. A recovered job is retried as a new attempt only when
+the guardian is gone. A live or missing identity is quarantined, and recovery
+never kills a bare PID. Guardian events use a nonce-bound control channel that
+is separate from worker stdout and stderr. Adversarial tests prove worker log
+bytes cannot spoof exit evidence, then crash the owning process and prove the
+guardian, worker, descendant, and delayed filesystem canary all die.
+
+Residual boundary: a reused guardian PID can conservatively delay work until
+human inspection; it cannot authorize a kill or duplicate attempt. Native
+Windows Job Objects may reduce latency later but are not required for the
+ownership invariant.
 
 ## Lease stealing and filesystem semantics
 
-The queue has one directory lease with heartbeats and stale-owner recovery.
-Before treating this as a distributed or network-filesystem lease, review the
-compare-and-swap guarantees required during lease renewal, stealing, and
-release on NTFS versus SMB/Tailscale-accessed storage. Today it is a
-single-machine, single-dispatcher boundary.
+**Outcome: resolved as a deliberately local lease.** Lease records now carry a
+monotonic generation, random instance identity, hostname, process identity, and
+timestamps. Renewal and release require the exact generation. Release first
+atomically renames the exact lock, so a stale owner cannot delete its
+successor. Expiration permits recovery only on the same host after the owner PID
+is gone; a live process keeps ownership through suspend. UNC roots are rejected.
+
+Residual boundary: SMB, mapped network drives, shared Tailscale filesystems,
+clock-independent distributed fencing, and multi-host dispatch remain
+unsupported. Remote clients should call one host-owned Conductor service rather
+than sharing its queue directory.
 
 ## Dependent proposal composition
 

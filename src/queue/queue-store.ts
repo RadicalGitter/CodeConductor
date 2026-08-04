@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, rm, stat } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import {
@@ -9,6 +10,7 @@ import {
   type QueueItem,
 } from "../contracts/queue.js";
 import type { JobContract } from "../contracts/job.js";
+import { isProcessAlive } from "../runtime/process-runner.js";
 import { ArtifactStore } from "../storage/artifact-store.js";
 
 export class QueueStore {
@@ -19,6 +21,11 @@ export class QueueStore {
     root = path.join(artifacts.root, "queue"),
   ) {
     this.root = path.resolve(root);
+    if (this.root.startsWith("\\\\")) {
+      throw new Error(
+        "Conductor queue data must use a local filesystem; UNC roots are unsupported",
+      );
+    }
   }
 
   async initialize(): Promise<void> {
@@ -119,33 +126,56 @@ export class QueueStore {
   ): Promise<DispatcherLease | undefined> {
     await this.initialize();
     const directory = this.leaseDirectory();
-    const lease = createLease(ownerId, leaseMs, now);
     try {
       await mkdir(directory);
-      await this.artifacts.writeJsonAtomic(this.leasePath(), lease);
-      return lease;
-    } catch {
+    } catch (error) {
+      if (!(
+        error instanceof Error &&
+        "code" in error &&
+        error.code === "EEXIST"
+      )) {
+        throw error;
+      }
       let existing: DispatcherLease;
       try {
         existing = await this.readLease();
       } catch {
         const lockAge = now.getTime() - (await stat(directory)).mtimeMs;
         if (lockAge <= leaseMs) return undefined;
-        return this.stealLease(directory, ownerId, leaseMs, now);
+        return undefined;
       }
       if (Date.parse(existing.expiresAt) > now.getTime()) return undefined;
+      if (existing.hostname !== os.hostname()) return undefined;
+      if (isProcessAlive(existing.processId)) return undefined;
       return this.stealLease(directory, ownerId, leaseMs, now);
+    }
+    try {
+      const generation = await this.nextLeaseGeneration();
+      const lease = createLease(ownerId, generation, leaseMs, now);
+      await this.artifacts.writeJsonAtomic(this.leasePath(), lease);
+      return lease;
+    } catch (error) {
+      await rm(directory, { recursive: true, force: true });
+      throw error;
     }
   }
 
   async renewLease(
-    ownerId: string,
+    lease: DispatcherLease,
     leaseMs: number,
     now = new Date(),
   ): Promise<DispatcherLease> {
     const current = await this.readLease();
-    if (current.ownerId !== ownerId) {
-      throw new Error(`Dispatcher lease is owned by ${current.ownerId}`);
+    if (!sameLease(current, lease)) {
+      throw new Error(
+        `Dispatcher lease generation ${lease.generation} is no longer current`,
+      );
+    }
+    if (
+      current.hostname !== os.hostname() ||
+      current.processId !== process.pid
+    ) {
+      throw new Error("Dispatcher lease cannot be renewed by another process");
     }
     const renewed = dispatcherLeaseSchema.parse({
       ...current,
@@ -156,15 +186,34 @@ export class QueueStore {
     return renewed;
   }
 
-  async releaseLease(ownerId: string): Promise<void> {
+  async releaseLease(lease: DispatcherLease): Promise<void> {
     let current: DispatcherLease;
     try {
       current = await this.readLease();
     } catch {
       return;
     }
-    if (current.ownerId !== ownerId) return;
-    await rm(this.leaseDirectory(), { recursive: true, force: true });
+    if (!sameLease(current, lease)) return;
+    const releasing = `${this.leaseDirectory()}.release-${lease.instanceId}`;
+    try {
+      await rename(this.leaseDirectory(), releasing);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        error.code === "ENOENT"
+      ) {
+        return;
+      }
+      throw error;
+    }
+    const moved = dispatcherLeaseSchema.parse(
+      JSON.parse(await readFile(path.join(releasing, "lease.json"), "utf8")),
+    );
+    if (!sameLease(moved, lease)) {
+      throw new Error("Lease identity changed during release");
+    }
+    await rm(releasing, { recursive: true, force: true });
   }
 
   itemPath(jobId: string): string {
@@ -185,6 +234,10 @@ export class QueueStore {
 
   private leasePath(): string {
     return path.join(this.leaseDirectory(), "lease.json");
+  }
+
+  private generationPath(): string {
+    return path.join(this.root, "lease-generation.json");
   }
 
   private async readLease(): Promise<DispatcherLease> {
@@ -208,21 +261,66 @@ export class QueueStore {
     await rm(stale, { recursive: true, force: true });
     return this.acquireLease(ownerId, leaseMs, now);
   }
+
+  private async nextLeaseGeneration(): Promise<number> {
+    let generation = 0;
+    try {
+      const current = JSON.parse(
+        await readFile(this.generationPath(), "utf8"),
+      ) as { generation?: unknown };
+      if (
+        !Number.isSafeInteger(current.generation) ||
+        Number(current.generation) < 1
+      ) {
+        throw new Error("Invalid lease generation record");
+      }
+      generation = Number(current.generation);
+    } catch (error) {
+      if (!(
+        error instanceof Error &&
+        "code" in error &&
+        error.code === "ENOENT"
+      )) {
+        throw error;
+      }
+    }
+    const next = generation + 1;
+    await this.artifacts.writeJsonAtomic(this.generationPath(), {
+      schema: "conductor.lease-generation/v1",
+      generation: next,
+    });
+    return next;
+  }
 }
 
 function createLease(
   ownerId: string,
+  generation: number,
   leaseMs: number,
   now: Date,
 ): DispatcherLease {
   return dispatcherLeaseSchema.parse({
-    schema: "conductor.dispatcher-lease/v1",
+    schema: "conductor.dispatcher-lease/v2",
     ownerId,
+    instanceId: randomUUID(),
+    generation,
+    hostname: os.hostname(),
     processId: process.pid,
+    processStartedAt: new Date(
+      Date.now() - Math.round(process.uptime() * 1_000),
+    ).toISOString(),
     acquiredAt: now.toISOString(),
     heartbeatAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + leaseMs).toISOString(),
   });
+}
+
+function sameLease(left: DispatcherLease, right: DispatcherLease): boolean {
+  return (
+    left.ownerId === right.ownerId &&
+    left.instanceId === right.instanceId &&
+    left.generation === right.generation
+  );
 }
 
 function safeSegment(value: string): string {

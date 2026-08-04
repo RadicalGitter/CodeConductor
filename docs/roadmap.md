@@ -60,11 +60,11 @@ fan-out, and isolated mutating workers.
 **Exit:** simultaneous work improves accepted throughput without shared mutable
 workspaces or duplicate attempts.
 
-**State:** conservative core implemented. Queue items, dependency gates,
-bounded concurrency, compact completion records, single-owner leases, queued
-restart recovery, and orphan quarantine are characterized. Automatic orphan
-retry and cross-machine lease semantics remain in the Extra High review
-register.
+**State:** local-host core implemented. Queue items, dependency gates, bounded
+concurrency, compact completion records, generation-fenced leases, guardian-
+owned process trees, and safe orphan retry are characterized. Live or unknown
+process identity is quarantined. UNC roots are rejected; cross-machine and
+network-filesystem dispatch remain explicitly unsupported.
 
 ## Slice 5 — independent semantic review
 

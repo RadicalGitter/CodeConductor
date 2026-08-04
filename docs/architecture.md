@@ -59,6 +59,12 @@ may run up to the configured capacity; every mutation still receives its own
 worktree. Dependencies gate start, not acceptance: a dependency is satisfied
 only by a completed attempt with eligible deterministic evidence.
 
+The local dispatcher lease is generation-fenced. Expiration alone never
+authorizes stealing from a live same-host process, so machine suspend cannot
+create a second owner. Release removes only the exact owner/instance/generation
+that acquired the lease. UNC queue roots are rejected; this is not a
+distributed-filesystem lease.
+
 ## Execution boundary
 
 The host executor provides worktree isolation and conservative subprocess
@@ -73,6 +79,13 @@ inside the worktree by real path, receive only allowlisted environment names,
 and produce separate logs. Setup must leave repository state clean; acceptance
 must leave the captured proposal unchanged. Network, stronger secret isolation,
 resource limits, and host mounts belong to the VM executor, not `AGENTS.md`.
+
+Every setup, worker, and acceptance subprocess is owned by a separate guardian
+process. Conductor persists the guardian identity before the guarded worker is
+started and keeps an ownership pipe open. If Conductor exits or crashes, pipe
+closure makes the guardian terminate the complete worker tree. Recovery retries
+only after the recorded guardian is provably gone; a live or unprovable
+identity is quarantined. A PID is never used by itself as authority to kill.
 
 ## Extension boundary
 

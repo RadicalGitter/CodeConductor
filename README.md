@@ -31,7 +31,8 @@ asynchronous submission, polling, process-tree cancellation, exact-revision Git
 worktrees, atomic job/attempt manifests, proposal patches, setup evidence,
 path-scope enforcement, acceptance-command evidence, and a stdio MCP server.
 It also has a durable single-owner queue with bounded parallelism, dependency
-gates, compact completion records, and conservative restart recovery.
+gates, compact completion records, generation-fenced local leases, guarded
+process trees, and safe same-host restart recovery.
 
 ```powershell
 bun install

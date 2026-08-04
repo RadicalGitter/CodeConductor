@@ -13,6 +13,15 @@ export const attemptStatusSchema = z.enum([
 
 export type AttemptStatus = z.infer<typeof attemptStatusSchema>;
 
+export const processGuardianIdentitySchema = z.object({
+  schema: z.literal("conductor.process-guardian/v1"),
+  nonce: z.string().uuid(),
+  guardianPid: z.number().int().positive(),
+  parentPid: z.number().int().positive(),
+  createdAt: z.string().datetime(),
+  workerPid: z.number().int().positive().optional(),
+});
+
 export const failureKindSchema = z.enum([
   "invalid-job",
   "adapter-unavailable",
@@ -23,6 +32,7 @@ export const failureKindSchema = z.enum([
   "proposal-capture-failed",
   "timeout",
   "cancelled",
+  "orphaned",
   "orchestrator-error",
 ]);
 
@@ -43,6 +53,7 @@ export const attemptManifestSchema = z.object({
       retained: z.boolean(),
     })
     .optional(),
+  guardian: processGuardianIdentitySchema.optional(),
   invocation: z
     .object({
       executable: z.string().min(1),
