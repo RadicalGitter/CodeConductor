@@ -127,6 +127,40 @@ export const externalResourceSchema = z.object({
 
 export type ExternalResource = z.infer<typeof externalResourceSchema>;
 
+export const workerProfileFileSchema = z.object({
+  role: z.enum(["executable", "harness", "configuration"]),
+  path: z.string().min(1),
+  size: z.number().int().nonnegative(),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/),
+});
+
+export const workerExecutionProfileSchema = z.object({
+  schema: z.literal("conductor.worker-execution-profile/v1"),
+  recordedAt: z.string().datetime(),
+  status: z.enum(["complete", "unresolved"]),
+  adapter: z.object({
+    id: z.string().min(1),
+    label: z.string().min(1),
+    executable: z.string().min(1),
+    mutationMode: z.literal("worktree"),
+    outputFormat: z.enum(["jsonl", "text"]),
+    safetyMode: z.string().min(1),
+    hostExecution: z.enum(["file-edit-only", "command-capable"]).optional(),
+    modelIdentity: z.enum(["required", "not-applicable"]),
+  }),
+  adapterOptionsFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  invocationFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  modelSelector: z.string().min(1).optional(),
+  attributes: z.record(z.string(), z.string()).default({}),
+  files: z.array(workerProfileFileSchema),
+  unresolvedReasons: z.array(z.string().min(1)),
+  profileFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+});
+
+export type WorkerExecutionProfile = z.infer<
+  typeof workerExecutionProfileSchema
+>;
+
 export const failureKindSchema = z.enum([
   "invalid-job",
   "adapter-unavailable",
@@ -173,6 +207,7 @@ export const attemptManifestSchema = z.object({
       environmentKeys: z.array(z.string()),
     })
     .optional(),
+  workerProfile: workerExecutionProfileSchema.optional(),
   process: processResultSchema.optional(),
   artifacts: z.object({
     job: z.string().min(1),

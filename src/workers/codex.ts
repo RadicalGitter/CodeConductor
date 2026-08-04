@@ -28,6 +28,7 @@ export class CodexAdapter implements WorkerAdapter {
       safetyMode: "codex-workspace-write",
       available: this.executable !== undefined,
       hostExecution: "command-capable" as const,
+      modelIdentity: "required" as const,
     };
   }
 
@@ -61,6 +62,21 @@ export class CodexAdapter implements WorkerAdapter {
       args,
       cwd: workspacePath,
       env: selectRequestedEnvironment(this.environmentKeys),
+    };
+  }
+
+  profileEvidence(contract: JobContract) {
+    const configPath = process.env.CONDUCTOR_CODEX_CONFIG_FILE;
+    return {
+      files: configPath
+        ? [{ role: "configuration" as const, path: configPath }]
+        : [],
+      attributes: {
+        profile: String(contract.worker.options.profile ?? "default"),
+      },
+      unresolvedReasons: configPath
+        ? []
+        : ["CONDUCTOR_CODEX_CONFIG_FILE is not explicitly bound"],
     };
   }
 }

@@ -210,6 +210,7 @@ class McpFixtureAdapter implements WorkerAdapter {
     outputFormat: "jsonl" as const,
     safetyMode: "test-fixture",
     available: true,
+    modelIdentity: "not-applicable" as const,
   };
 
   buildInvocation(_contract: JobContract, workspacePath: string) {

@@ -470,6 +470,7 @@ class SandboxFixtureAdapter implements WorkerAdapter {
       safetyMode: "test-fixture",
       available: true,
       hostExecution,
+      modelIdentity: "not-applicable" as const,
     };
   }
 

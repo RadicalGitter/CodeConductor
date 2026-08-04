@@ -40,6 +40,7 @@ export class KodeAdapter implements WorkerAdapter {
       safetyMode: "kode-safe-accept-edits",
       available: this.executable !== undefined && this.entryAvailable,
       hostExecution: "file-edit-only" as const,
+      modelIdentity: "required" as const,
     };
   }
 
@@ -78,6 +79,33 @@ export class KodeAdapter implements WorkerAdapter {
       ],
       cwd: workspacePath,
       env: selectRequestedEnvironment(this.environmentKeys),
+    };
+  }
+
+  profileEvidence(contract: JobContract, invocation: ProcessInvocation) {
+    const files: Array<{
+      role: "harness" | "configuration";
+      path: string;
+    }> = [];
+    if (this.entry) files.push({ role: "harness", path: this.entry });
+    const configDirectory =
+      invocation.env?.KODE_CONFIG_DIR ?? process.env.KODE_CONFIG_DIR;
+    const unresolvedReasons: string[] = [];
+    if (configDirectory) {
+      files.push({
+        role: "configuration",
+        path: path.join(configDirectory, "config.json"),
+      });
+    } else {
+      unresolvedReasons.push("KODE_CONFIG_DIR is not explicitly bound");
+    }
+    return {
+      files,
+      attributes: {
+        maxTurns: String(this.maxTurns),
+        modelSelector: String(contract.worker.options.model ?? ""),
+      },
+      unresolvedReasons,
     };
   }
 }

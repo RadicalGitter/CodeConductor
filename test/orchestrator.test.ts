@@ -71,14 +71,14 @@ test("runs a durable proposal in an exact-revision worktree and replays idempote
 
     const firstReview = await conductor.getReviewBundle(result.attemptId);
     const secondReview = await conductor.getReviewBundle(result.attemptId);
-    expect(firstReview.packet.schema).toBe("conductor.review-packet/v1");
+    expect(firstReview.packet.schema).toBe("conductor.review-packet/v2");
     expect(firstReview.packet.authority).toBe("advisory-review-only");
     expect(firstReview.packet.changedPaths).toEqual(["generated.txt"]);
     expect(firstReview.patch.text).toContain("generated.txt");
     expect(secondReview.packet).toEqual(firstReview.packet);
     expect(
-      firstReview.packet.bindings.find(
-        (binding) => binding.name === "proposalPatch",
+      firstReview.packet.bindings.find((binding) =>
+        binding.purposes.includes("proposal-patch"),
       )?.sha256,
     ).toMatch(/^[a-f0-9]{64}$/);
     const originalPatch = await readFile(
@@ -90,7 +90,7 @@ test("runs a durable proposal in an exact-revision worktree and replays idempote
       `${originalPatch}\ntampered\n`,
     );
     await expect(conductor.getReviewBundle(result.attemptId)).rejects.toThrow(
-      "Proposal patch evidence changed",
+      "Sealed review evidence changed",
     );
     await writeFile(result.artifacts.proposalPatch, originalPatch);
 
@@ -333,6 +333,7 @@ class FixtureAdapter implements WorkerAdapter {
     outputFormat: "jsonl" as const,
     safetyMode: "test-fixture",
     available: true,
+    modelIdentity: "not-applicable" as const,
   };
 
   buildInvocation(_contract: JobContract, workspacePath: string) {

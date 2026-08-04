@@ -34,10 +34,18 @@ import { selectParentEnvironment } from "../runtime/environment.js";
 import { SandboxProfiles, validateSandboxCommand } from "../sandbox/docker.js";
 import {
   buildReviewPacket,
+  assertReviewArtifactPaths,
+  ReviewEvidenceError,
   reviewPacketSchema,
   sha256File,
+  validateReviewPacket,
   type ReviewPacket,
+  type ReviewEvidenceState,
 } from "../review/packet.js";
+import {
+  captureWorkerExecutionProfile,
+  validateWorkerExecutionProfile,
+} from "../review/worker-profile.js";
 import { ArtifactStore } from "../storage/artifact-store.js";
 import {
   GitWorkspaceManager,
@@ -81,6 +89,10 @@ export class ProposalLineageError extends Error {
 export class Conductor {
   private readonly activeAttempts = new Map<string, AbortController>();
   private readonly executions = new Map<string, Promise<AttemptManifest>>();
+  private readonly reviewPacketCreations = new Map<
+    string,
+    Promise<ReviewPacket>
+  >();
   private readonly launcherInstanceId = randomUUID();
 
   constructor(
@@ -266,26 +278,54 @@ export class Conductor {
   }
 
   async getReviewPacket(attemptId: string): Promise<ReviewPacket> {
+    const existing = this.reviewPacketCreations.get(attemptId);
+    if (existing) return existing;
+    const creation = this.readOrCreateReviewPacket(attemptId);
+    this.reviewPacketCreations.set(attemptId, creation);
+    try {
+      return await creation;
+    } finally {
+      if (this.reviewPacketCreations.get(attemptId) === creation) {
+        this.reviewPacketCreations.delete(attemptId);
+      }
+    }
+  }
+
+  private async readOrCreateReviewPacket(
+    attemptId: string,
+  ): Promise<ReviewPacket> {
     const manifest = await this.getAttempt(attemptId);
     if (
-      !["completed", "failed", "needs-input", "cancelled"].includes(
-        manifest.status,
-      )
+      manifest.status !== "completed" ||
+      manifest.verificationStatus !== "eligible"
     ) {
-      throw new Error(`Attempt ${attemptId} is not terminal`);
+      throw new ReviewEvidenceError(
+        "unavailable",
+        `Attempt ${attemptId} is not eligible for review`,
+      );
     }
     const contract = await this.store.readJob(manifest.jobId);
     if (manifest.lineage?.status === "composed") {
       await this.validateProposalLineage(contract, manifest.lineage);
     }
+    const state = await this.readReviewEvidenceState(contract, manifest);
     const target = path.join(
       path.dirname(manifest.artifacts.manifest),
       "review-packet.json",
     );
     try {
-      return reviewPacketSchema.parse(
-        JSON.parse(await readFile(target, "utf8")),
-      );
+      const raw = JSON.parse(await readFile(target, "utf8")) as {
+        schema?: unknown;
+      };
+      if (raw.schema === "conductor.review-packet/v1") {
+        throw new ReviewEvidenceError(
+          "legacy-unsealed",
+          `Attempt ${attemptId} has a legacy packet that cannot be upgraded without historical evidence`,
+        );
+      }
+      const packet = reviewPacketSchema.parse(raw);
+      await validateReviewPacket(packet, state);
+      return packet;
     } catch (error) {
       if (!(
         error instanceof Error &&
@@ -295,45 +335,82 @@ export class Conductor {
         throw error;
       }
     }
-
-    const verification = await this.getVerification(attemptId);
-    const changedPaths = JSON.parse(
-      await readFile(manifest.artifacts.changedPaths, "utf8"),
-    ) as unknown;
-    if (
-      !Array.isArray(changedPaths) ||
-      !changedPaths.every((entry) => typeof entry === "string")
-    ) {
-      throw new Error(`Invalid changed-path evidence for ${attemptId}`);
+    const packet = await buildReviewPacket(state);
+    try {
+      await this.store.writeJsonAtomic(target, packet);
+    } catch (error) {
+      try {
+        const winner = reviewPacketSchema.parse(
+          JSON.parse(await readFile(target, "utf8")),
+        );
+        await validateReviewPacket(winner, state);
+        return winner;
+      } catch {
+        throw error;
+      }
     }
-    const packet = await buildReviewPacket({
-      contract,
-      manifest,
-      verification,
-      changedPaths,
-    });
-    await this.store.writeJsonAtomic(target, packet);
+    await validateReviewPacket(
+      packet,
+      await this.readReviewEvidenceState(
+        await this.store.readJob(manifest.jobId),
+        await this.getAttempt(attemptId),
+      ),
+    );
     return packet;
   }
 
   async getReviewBundle(attemptId: string, maxPatchBytes = 500_000) {
     const packet = await this.getReviewPacket(attemptId);
-    const patchBinding = packet.bindings.find(
-      (binding) => binding.name === "proposalPatch",
-    );
-    if (
-      !patchBinding?.available ||
-      !patchBinding.sha256 ||
-      (await sha256File(patchBinding.path)) !== patchBinding.sha256
-    ) {
-      throw new Error(`Proposal patch evidence changed for ${attemptId}`);
-    }
     const patch = await this.readAttemptArtifact(
       attemptId,
       "proposalPatch",
       maxPatchBytes,
     );
+    const manifest = await this.getAttempt(attemptId);
+    await validateReviewPacket(
+      packet,
+      await this.readReviewEvidenceState(
+        await this.store.readJob(manifest.jobId),
+        manifest,
+      ),
+    );
     return { packet, patch };
+  }
+
+  private async readReviewEvidenceState(
+    contract: JobContract,
+    manifest: AttemptManifest,
+  ): Promise<ReviewEvidenceState> {
+    const attemptDirectory = this.store.attemptDirectory(
+      manifest.jobId,
+      manifest.attemptId,
+    );
+    const jobPath = this.store.jobPath(manifest.jobId);
+    assertReviewArtifactPaths({ manifest, attemptDirectory, jobPath });
+    const [cleanup, verification, changedPathsRaw] = await Promise.all([
+      this.store.readAttemptCleanup(manifest.jobId, manifest.attemptId),
+      this.getVerification(manifest.attemptId),
+      readFile(manifest.artifacts.changedPaths, "utf8"),
+    ]);
+    const changedPaths = JSON.parse(changedPathsRaw) as unknown;
+    if (
+      !Array.isArray(changedPaths) ||
+      !changedPaths.every((entry) => typeof entry === "string")
+    ) {
+      throw new ReviewEvidenceError(
+        "corrupt",
+        `Invalid changed-path evidence for ${manifest.attemptId}`,
+      );
+    }
+    return {
+      contract,
+      manifest,
+      cleanup,
+      verification,
+      changedPaths,
+      attemptDirectory,
+      jobPath,
+    };
   }
 
   async readAttemptArtifact(
@@ -923,6 +1000,11 @@ export class Conductor {
         proposalContributionAttemptIds:
           manifest.lineage?.contributions.map((entry) => entry.attemptId) ?? [],
       });
+      const workerProfile = await captureWorkerExecutionProfile({
+        adapter,
+        contract,
+        invocation,
+      });
       manifest = await this.update(manifest, {
         status: "running",
         invocation: {
@@ -931,7 +1013,12 @@ export class Conductor {
           cwd: invocation.cwd,
           environmentKeys: Object.keys(invocation.env ?? {}).sort(),
         },
+        workerProfile,
       });
+
+      if (workerProfile.status === "complete") {
+        await validateWorkerExecutionProfile(workerProfile);
+      }
 
       const processResult = await runProcess(invocation, {
         stdoutPath: manifest.artifacts.stdout,
@@ -1098,7 +1185,9 @@ export class Conductor {
           verification = {
             ...verification,
             eligibleForReview:
-              verification.acceptance.status === "passed" && proposalStable,
+              verification.acceptance.status === "passed" &&
+              proposalStable &&
+              workerProfile.status === "complete",
           };
         } else {
           verification = {
@@ -1108,7 +1197,7 @@ export class Conductor {
               commands: [],
               proposalStable: true,
             },
-            eligibleForReview: true,
+            eligibleForReview: workerProfile.status === "complete",
           };
         }
         await this.writeVerification(manifest, verification);

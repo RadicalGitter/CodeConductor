@@ -255,8 +255,8 @@ try {
         reviewPacket: {
           schema: review.packet.schema,
           authority: review.packet.authority,
-          patchSha256: review.packet.bindings.find(
-            (binding) => binding.name === "proposalPatch",
+          patchSha256: review.packet.bindings.find((binding) =>
+            binding.purposes.includes("proposal-patch"),
           )?.sha256,
           patchTruncated: review.patch.truncated,
         },

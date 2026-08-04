@@ -108,6 +108,19 @@ test("dependent work consumes a hash-bound proposal lineage without widening chi
       derivedRevision: childAttempt.workspace?.baseRevision,
       status: "composed",
     });
+    const contribution = childAttempt.lineage!.contributions[0]!;
+    for (const target of [
+      contribution.patchPath,
+      contribution.verificationPath,
+    ]) {
+      const original = await readFile(target);
+      await writeFile(target, Buffer.concat([original, Buffer.from("tamper")]));
+      await expect(
+        conductor.getReviewPacket(childAttempt.attemptId),
+      ).rejects.toThrow();
+      await writeFile(target, original);
+      await conductor.getReviewPacket(childAttempt.attemptId);
+    }
 
     const reconstruction = await conductor.workspaces.create({
       repositoryRoot: repository.root,
@@ -240,6 +253,7 @@ class LineageAdapter implements WorkerAdapter {
     outputFormat: "jsonl" as const,
     safetyMode: "test-fixture",
     available: true,
+    modelIdentity: "not-applicable" as const,
   };
 
   buildInvocation(

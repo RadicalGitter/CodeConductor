@@ -14,6 +14,8 @@ export * from "./queue/dispatcher.js";
 export * from "./queue/completion.js";
 export * from "./queue/queue-store.js";
 export * from "./reconcile/runtime-reconciler.js";
+export * from "./review/packet.js";
+export * from "./review/worker-profile.js";
 export * from "./sources/command-profiles.js";
 export * from "./sources/compiler.js";
 export * from "./sources/service.js";

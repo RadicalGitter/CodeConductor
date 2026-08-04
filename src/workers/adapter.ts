@@ -10,6 +10,16 @@ export interface WorkerAdapterDescription {
   safetyMode: string;
   available: boolean;
   hostExecution?: "file-edit-only" | "command-capable";
+  modelIdentity: "required" | "not-applicable";
+}
+
+export interface WorkerProfileEvidence {
+  files?: Array<{
+    role: "harness" | "configuration";
+    path: string;
+  }>;
+  attributes?: Record<string, string>;
+  unresolvedReasons?: string[];
 }
 
 export interface WorkerAdapter {
@@ -19,6 +29,10 @@ export interface WorkerAdapter {
     workspacePath: string,
     attemptContext?: WorkerAttemptContext,
   ): ProcessInvocation;
+  profileEvidence?(
+    contract: JobContract,
+    invocation: ProcessInvocation,
+  ): WorkerProfileEvidence;
 }
 
 export interface WorkerAttemptContext {

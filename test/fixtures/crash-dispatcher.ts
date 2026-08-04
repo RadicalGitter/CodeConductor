@@ -22,6 +22,7 @@ class CrashFixtureAdapter implements WorkerAdapter {
     outputFormat: "jsonl" as const,
     safetyMode: "test-fixture",
     available: true,
+    modelIdentity: "not-applicable" as const,
   };
 
   buildInvocation(contract: JobContract, workspacePath: string) {

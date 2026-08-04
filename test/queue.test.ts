@@ -364,6 +364,7 @@ class DelayedAdapter implements WorkerAdapter {
       outputFormat: "jsonl" as const,
       safetyMode: "test-fixture",
       available: true,
+      modelIdentity: "not-applicable" as const,
     };
   }
 

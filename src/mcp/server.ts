@@ -317,7 +317,7 @@ export function createMcpServer(
     {
       title: "Get hash-bound review bundle",
       description:
-        "Create or read a durable advisory review packet bound to the frozen contract and evidence hashes, plus a bounded proposal patch. This does not accept, merge, or mutate project state.",
+        "Create or read a sealed advisory review packet after revalidating the frozen job, terminal attempt, cleanup, verification, patch, status, changed paths, worker and command logs, lineage, attempt inventory, and launch-time model/harness profile. Returns a bounded proposal patch and never accepts, merges, or mutates project state.",
       inputSchema: {
         attemptId: z.string().min(1),
         maxPatchBytes: z.number().int().min(1).max(1_000_000).default(500_000),
