@@ -14,6 +14,12 @@
 | `get_queue_item`           | Reads one queue record                                             |
 | `cancel_queued_job`        | Cancels waiting work or its active process tree                    |
 | `retry_queued_job`         | Requeues terminal work as a new evidence-preserving attempt        |
+| `scan_contract_sources`    | Compiles exact-revision comment contracts without mutation         |
+| `enqueue_contract_sources` | Persists and queues a validated source dependency graph            |
+| `register_contract_watch`  | Persists an automatic moving-ref scan policy                       |
+| `list_contract_watches`    | Reads watch revisions, run ids, and errors                         |
+| `set_contract_watch`       | Enables or disables a persisted watch                              |
+| `poll_contract_watches`    | Runs one immediate watch cycle                                     |
 | `get_attempt`              | Reads a durable attempt manifest                                   |
 | `get_verification`         | Reads typed deterministic verification evidence                    |
 | `read_attempt_artifact`    | Reads a bounded named artifact without arbitrary path access       |
@@ -46,6 +52,8 @@ its own worktree.
   queue/
     items/<job-id>/queue.json
     dispatcher.lock/lease.json
+  source-runs/<run-id>/manifest.json
+  source-watches/<watch-id>/watch.json
 ```
 
 Job and initial-attempt reservations become visible through atomic directory

@@ -46,6 +46,12 @@ runtime authority.
 **Exit:** two small comment-authored contracts execute in dependency order and
 remain reconstructable after restart.
 
+**State:** generic core implemented. Strict JSON comment blocks are read from
+tracked exact-revision files, validated as a DAG, resolved through owner-side
+command profiles, recorded as source-run manifests, and enqueued idempotently.
+Persistent watches poll moving refs and record failures. Symbol-aware placement
+and proposal-lineage composition remain later refinements.
+
 ## Slice 4 — queue and parallelism
 
 Durable queue, leases, bounded concurrency, compact completion events, read-only

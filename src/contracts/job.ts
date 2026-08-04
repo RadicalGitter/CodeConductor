@@ -3,7 +3,7 @@ import path from "node:path";
 import { z } from "zod/v4";
 
 const environmentNameSchema = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/);
-const relativePathSchema = z.string().min(1).refine(isSafeRelativePath, {
+export const relativePathSchema = z.string().min(1).refine(isSafeRelativePath, {
   message: "must be a relative path without traversal or glob syntax",
 });
 
@@ -35,6 +35,11 @@ export const jobRequestSchema = z.object({
     .default({ allowedPaths: [], forbiddenPaths: [], protectedPaths: [] }),
   contextRefs: z.array(z.string().min(1)).default([]),
   constraints: z.array(z.string().min(1)).default([]),
+  escalateWhen: z
+    .array(z.string().min(1))
+    .default([
+      "Required work exceeds declared scope or conflicts with repository authority.",
+    ]),
   setupCommands: z.array(commandSpecSchema).default([]),
   acceptanceCommands: z.array(commandSpecSchema).default([]),
   timeoutMs: z.number().int().positive().max(86_400_000).default(3_600_000),
@@ -64,6 +69,7 @@ export const jobContractSchema = z.object({
   scope: jobRequestSchema.shape.scope,
   contextRefs: z.array(z.string()),
   constraints: z.array(z.string()),
+  escalateWhen: z.array(z.string().min(1)).min(1),
   setupCommands: z.array(commandSpecSchema),
   acceptanceCommands: z.array(commandSpecSchema),
   execution: z.object({
@@ -112,6 +118,7 @@ export function freezeJobRequest(
     scope: request.scope,
     contextRefs: request.contextRefs,
     constraints: request.constraints,
+    escalateWhen: request.escalateWhen,
     setupCommands: request.setupCommands,
     acceptanceCommands: request.acceptanceCommands,
     execution: {

@@ -59,6 +59,7 @@ export function buildWorkerPrompt(contract: JobContract): string {
   const constraints = contract.constraints.length
     ? contract.constraints.join("\n- ")
     : "(none)";
+  const escalations = contract.escalateWhen.join("\n- ");
 
   return `You are one coding worker operating inside an isolated Git worktree.
 
@@ -74,6 +75,9 @@ Context references:
 
 Constraints:
 - ${constraints}
+
+Stop and report needs-input instead of guessing when:
+- ${escalations}
 
 Use the coding and inspection tools available in your harness. Make the requested changes in the assigned worktree and run focused checks when practical. Treat your changes and final response as a proposal: Conductor records evidence, while acceptance and canonical integration remain outside your authority.`;
 }

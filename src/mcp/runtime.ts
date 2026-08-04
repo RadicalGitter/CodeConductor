@@ -8,6 +8,11 @@ import { GitWorkspaceManager } from "../workspaces/git-workspace.js";
 import { ExecutionPolicy } from "../verification/command-executor.js";
 import { DurableDispatcher } from "../queue/dispatcher.js";
 import { QueueStore } from "../queue/queue-store.js";
+import { CommandProfiles } from "../sources/command-profiles.js";
+import { ContractSourceCompiler } from "../sources/compiler.js";
+import { ContractSourceService } from "../sources/service.js";
+import { ContractSourcePoller } from "../sources/poller.js";
+import { SourceWatchStore } from "../sources/watch-store.js";
 
 export function createConductorFromEnvironment(): Conductor {
   return createConductorRuntimeFromEnvironment().conductor;
@@ -17,16 +22,23 @@ export function createConductorRuntimeFromEnvironment(): {
   conductor: Conductor;
   queue: QueueStore;
   dispatcher: DurableDispatcher;
+  sources: ContractSourceService;
+  watches: SourceWatchStore;
+  poller: ContractSourcePoller;
 } {
   const dataRoot = path.resolve(
     process.env.CONDUCTOR_DATA_DIR ?? path.join(os.homedir(), ".conductor"),
   );
   const store = new ArtifactStore(dataRoot);
+  const profiles = CommandProfiles.fromEnvironment();
   const conductor = new Conductor(
     store,
     new GitWorkspaceManager(store.workspaceRoot()),
     createDefaultWorkerRegistry(),
-    ExecutionPolicy.fromEnvironment(),
+    ExecutionPolicy.fromEnvironment({
+      allowedExecutables: profiles.executablePaths(),
+      allowedEnvironmentNames: profiles.environmentNames(),
+    }),
   );
   const queue = new QueueStore(store);
   const dispatcher = new DurableDispatcher(conductor, queue, {
@@ -34,7 +46,18 @@ export function createConductorRuntimeFromEnvironment(): {
     pollIntervalMs: environmentInteger("CONDUCTOR_POLL_INTERVAL_MS", 2_000),
     leaseMs: environmentInteger("CONDUCTOR_LEASE_MS", 30_000),
   });
-  return { conductor, queue, dispatcher };
+  const sources = new ContractSourceService(
+    new ContractSourceCompiler(conductor.workspaces, profiles),
+    dispatcher,
+    store,
+  );
+  const watches = new SourceWatchStore(store);
+  const poller = new ContractSourcePoller(
+    sources,
+    watches,
+    environmentInteger("CONDUCTOR_SOURCE_POLL_INTERVAL_MS", 30_000),
+  );
+  return { conductor, queue, dispatcher, sources, watches, poller };
 }
 
 function environmentInteger(name: string, fallback: number): number {

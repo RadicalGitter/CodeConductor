@@ -98,3 +98,19 @@ The suite now has 20 tests and 105 assertions. Queue characterization proves:
 - a second dispatcher cannot acquire an unexpired owner lease;
 - restart recovery quarantines a reserved/running orphan instead of spawning a
   duplicate attempt.
+
+## Contract-source slice
+
+The suite now has 22 tests and 124 assertions. It additionally proves that:
+
+- comment contracts are compiled from committed Git objects rather than dirty
+  working-tree files;
+- marker text inside an ordinary string does not create a contract;
+- duplicate ids, missing dependencies, cycles, and unauthorized adapters fail
+  before enqueue;
+- named command profiles resolve outside source and remain subject to execution
+  policy;
+- two gameplay-style contracts enqueue idempotently, execute in dependency
+  order, and persist a source-run manifest;
+- a persisted watch enqueues only once for an unchanged revision and observes
+  a newly committed revision on the next poll.

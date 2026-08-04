@@ -10,12 +10,27 @@ import {
 import { Conductor } from "../orchestrator/conductor.js";
 import { DurableDispatcher } from "../queue/dispatcher.js";
 import { QueueStore } from "../queue/queue-store.js";
+import { sourceScanRequestSchema } from "../contracts/source.js";
+import { ContractSourceCompiler } from "../sources/compiler.js";
+import { ContractSourceService } from "../sources/service.js";
+import { ContractSourcePoller } from "../sources/poller.js";
+import { SourceWatchStore } from "../sources/watch-store.js";
+import { sourceWatchRequestSchema } from "../contracts/source.js";
 
 export function createMcpServer(
   conductor: Conductor,
   dispatcher = new DurableDispatcher(
     conductor,
     new QueueStore(conductor.store),
+  ),
+  sources = new ContractSourceService(
+    new ContractSourceCompiler(conductor.workspaces),
+    dispatcher,
+    conductor.store,
+  ),
+  poller = new ContractSourcePoller(
+    sources,
+    new SourceWatchStore(conductor.store),
   ),
 ): McpServer {
   const server = new McpServer({
@@ -64,6 +79,101 @@ export function createMcpServer(
       },
     },
     async (input) => toolResult(await dispatcher.enqueue(input)),
+  );
+
+  server.registerTool(
+    "scan_contract_sources",
+    {
+      title: "Scan source-authored contracts",
+      description:
+        "Compile enabled @conductor-contract JSON blocks from tracked files at an exact Git revision. This is read-only and does not enqueue workers.",
+      inputSchema: sourceScanRequestSchema.shape,
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async (input) => toolResult(await sources.compile(input)),
+  );
+
+  server.registerTool(
+    "enqueue_contract_sources",
+    {
+      title: "Enqueue source-authored contracts",
+      description:
+        "Compile validated source contracts, resolve owner-side command profiles, persist a source-run manifest, and enqueue the dependency graph as proposal-only jobs.",
+      inputSchema: sourceScanRequestSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+      },
+    },
+    async (input) => toolResult(await sources.compileAndEnqueue(input)),
+  );
+
+  server.registerTool(
+    "register_contract_watch",
+    {
+      title: "Register contract-source watch",
+      description:
+        "Persist a scan policy for automatic exact-revision contract discovery. Registration grants proposal-queue authority only; it cannot accept or merge output.",
+      inputSchema: sourceWatchRequestSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+      },
+    },
+    async (input) => toolResult(await poller.watches.register(input)),
+  );
+
+  server.registerTool(
+    "list_contract_watches",
+    {
+      title: "List contract-source watches",
+      description:
+        "Read persisted watch policies, last successful revisions, source-run ids, and scan errors.",
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async () => toolResult({ watches: await poller.watches.list() }),
+  );
+
+  server.registerTool(
+    "set_contract_watch",
+    {
+      title: "Enable or disable contract-source watch",
+      description:
+        "Enable or disable one persisted source watch without deleting its history.",
+      inputSchema: {
+        watchId: z.string().min(1),
+        enabled: z.boolean(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+      },
+    },
+    async ({ watchId, enabled }) => {
+      const watch = await poller.watches.read(watchId);
+      return toolResult(await poller.watches.update(watch, { enabled }));
+    },
+  );
+
+  server.registerTool(
+    "poll_contract_watches",
+    {
+      title: "Poll contract-source watches now",
+      description:
+        "Run one immediate scan cycle. Each watch enqueues at most once per newly observed exact revision.",
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+      },
+    },
+    async () => {
+      await poller.pollOnce();
+      return toolResult({ watches: await poller.watches.list() });
+    },
   );
 
   server.registerTool(

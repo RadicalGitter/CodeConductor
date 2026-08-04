@@ -31,12 +31,21 @@ export class ExecutionPolicy {
     );
   }
 
-  static fromEnvironment(): ExecutionPolicy {
+  static fromEnvironment(
+    extras: {
+      allowedExecutables?: readonly string[];
+      allowedEnvironmentNames?: readonly string[];
+    } = {},
+  ): ExecutionPolicy {
     return new ExecutionPolicy({
-      allowedExecutables: parseList(process.env.CONDUCTOR_COMMAND_ALLOWLIST),
-      allowedEnvironmentNames: parseList(
-        process.env.CONDUCTOR_COMMAND_ENV_ALLOWLIST,
-      ),
+      allowedExecutables: [
+        ...parseList(process.env.CONDUCTOR_COMMAND_ALLOWLIST),
+        ...(extras.allowedExecutables ?? []),
+      ],
+      allowedEnvironmentNames: [
+        ...parseList(process.env.CONDUCTOR_COMMAND_ENV_ALLOWLIST),
+        ...(extras.allowedEnvironmentNames ?? []),
+      ],
     });
   }
 

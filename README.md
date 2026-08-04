@@ -70,6 +70,8 @@ See [the architecture](docs/architecture.md),
 [parity map](docs/parity-map.md), [verification](docs/verification.md), and
 [roadmap](docs/roadmap.md). Decisions intentionally reserved for stronger
 review are tracked in [the Extra High register](docs/extra-high-review.md).
+The in-code contract syntax and automatic watch behavior are documented in
+[source contracts](docs/source-contracts.md).
 
 ## Important current boundary
 

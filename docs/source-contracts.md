@@ -1,0 +1,77 @@
+# Source-authored contract format
+
+Conductor can discover bounded coding wishes beside the code they concern.
+Only tracked files from an exact Git revision are scanned; dirty working-tree
+text is never treated as executable orchestration input.
+
+## Marker
+
+The start marker must appear on a comment line. A marker inside a string is
+ignored. The body is strict JSON and the end marker closes the record.
+
+```ts
+/* @conductor-contract
+{
+  "id": "combat.apply-damage",
+  "objective": "Implement damage application and focused tests.",
+  "adapterId": "kode",
+  "adapterOptions": { "model": "local-coder" },
+  "scope": {
+    "allowedPaths": ["src/combat/damage.ts", "test/combat/damage.test.ts"],
+    "protectedPaths": ["src/combat/invariants.ts"]
+  },
+  "contextRefs": ["AGENTS.md", "docs/combat.md"],
+  "constraints": ["Preserve deterministic replay."],
+  "escalateWhen": ["The documented damage order conflicts with current tests."],
+  "acceptance": [
+    { "profile": "gameplay-focused", "args": ["damage.test.ts"] }
+  ],
+  "dependsOn": ["combat.attack-roll"],
+  "priority": 10
+}
+@end-conductor-contract */
+```
+
+Source contracts require a positive allowed-path declaration and at least one
+acceptance profile. Adapter ids are checked against the owner-supplied scan
+allowlist. Duplicate ids, missing dependencies, cycles, unsafe paths, malformed
+JSON, unknown profiles, and unavailable adapters fail before worker execution.
+
+## Command profiles
+
+Portable source comments name commands; they do not embed host executable or
+secret values. `CONDUCTOR_COMMAND_PROFILES_FILE` points to an owner-controlled
+JSON file outside the project contract:
+
+```json
+{
+  "schema": "conductor.command-profiles/v1",
+  "profiles": {
+    "gameplay-focused": {
+      "executable": "C:\\path\\to\\bun.exe",
+      "argsPrefix": ["test", "--"],
+      "inheritEnv": []
+    }
+  }
+}
+```
+
+Resolved commands still pass the normal shell-free execution policy. Profile
+values are not persisted in the source-authored contract.
+
+## Discovery and watches
+
+- `scan_contract_sources` compiles without queue mutation.
+- `enqueue_contract_sources` compiles and enqueues one exact revision.
+- `register_contract_watch` persists a moving-ref scan policy.
+- the MCP process polls enabled watches automatically;
+  `poll_contract_watches` triggers an immediate cycle.
+
+A watch enqueues at most once per newly observed revision and preserves its
+last scan, source run, and error. A changed revision currently recompiles the
+whole enabled graph. Selective semantic invalidation is deferred until real
+gameplay evidence shows which dependency propagation rule is useful.
+
+Dependency order does not yet compose one unaccepted patch into the next
+worker's base. Each job remains frozen at the scanned revision. Proposal-only
+composition is tracked in the Extra High review register.
