@@ -702,6 +702,8 @@ export class Conductor {
       return { manifest, cleanup: await this.getAttemptCleanup(attemptId) };
     }
 
+    await this.assertWorkspaceRemovalSafe(manifest);
+
     const priorCleanup = await this.getAttemptCleanup(attemptId);
     if (
       latestCleanupEvidence(priorCleanup, {
@@ -1152,6 +1154,7 @@ export class Conductor {
               "External resource cleanup failed; its worktree must remain available",
             );
           }
+          await this.assertWorkspaceRemovalSafe(manifest);
           await this.workspaces.remove(workspace);
           await this.appendCleanupEvidence(manifest, {
             subject: { kind: "workspace", id: "worktree" },
@@ -1369,6 +1372,27 @@ export class Conductor {
       }
     }
     return { manifest, safe: true };
+  }
+
+  private async assertWorkspaceRemovalSafe(
+    manifest: AttemptManifest,
+  ): Promise<void> {
+    const cleanup = await this.getAttemptCleanup(manifest.attemptId);
+    const unresolved = cleanup.requirements.filter(
+      (requirement) =>
+        requirement.subject.kind !== "workspace" &&
+        latestCleanupEvidence(cleanup, requirement.subject)?.status !==
+          "proven",
+    );
+    if (unresolved.length === 0) return;
+    throw new Error(
+      `Attempt ${manifest.attemptId} has unresolved cleanup for ${unresolved
+        .map(
+          (requirement) =>
+            `${requirement.subject.kind}:${requirement.subject.id}`,
+        )
+        .join(", ")}; workspace removal is prohibited`,
+    );
   }
 
   private async update(

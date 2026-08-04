@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -103,6 +104,34 @@ test("runs a durable proposal in an exact-revision worktree and replays idempote
         objective: "A conflicting objective",
       }),
     ).rejects.toBeInstanceOf(IdempotencyConflictError);
+
+    const processSubject = (
+      await conductor.getAttemptCleanup(result.attemptId)
+    ).requirements.find(
+      (requirement) => requirement.subject.kind === "process-tree",
+    )!.subject;
+    await store.appendAttemptCleanupEvidence(result.jobId, result.attemptId, {
+      schema: "conductor.cleanup-evidence/v1",
+      evidenceId: randomUUID(),
+      subject: processSubject,
+      status: "unknown",
+      method: "legacy-unverified",
+      observedAt: new Date().toISOString(),
+      detail: "injected unproved descendant state",
+    });
+    await expect(
+      conductor.removeAttemptWorkspace(result.attemptId),
+    ).rejects.toThrow("workspace removal is prohibited");
+    expect(await exists(result.workspacePath!)).toBe(true);
+    await store.appendAttemptCleanupEvidence(result.jobId, result.attemptId, {
+      schema: "conductor.cleanup-evidence/v1",
+      evidenceId: randomUUID(),
+      subject: processSubject,
+      status: "proven",
+      method: "process-runner",
+      observedAt: new Date().toISOString(),
+      detail: "injected closure after quarantine assertion",
+    });
 
     const removed = await conductor.removeAttemptWorkspace(result.attemptId);
     expect(removed.manifest.workspace?.retained).toBe(true);
