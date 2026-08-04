@@ -49,6 +49,8 @@ attempt: reserved -> preparing -> running -> verifying -> completed
                               \-> needs-input
 
 proposal: completed -> review-pending -> accepted | rejected | superseded
+
+lineage: eligible parent proposals -> derived proposal baseline -> child proposal
 ```
 
 Attempt terminal state is never overwritten by review disposition. A retry is a
@@ -58,6 +60,17 @@ Only one dispatcher lease owns queue-to-process transitions. Independent jobs
 may run up to the configured capacity; every mutation still receives its own
 worktree. Dependencies gate start, not acceptance: a dependency is satisfied
 only by a completed attempt with eligible deterministic evidence.
+
+Dependent work binds the exact completed attempt for each direct dependency and
+flattens its eligible ancestry in deterministic order. Patch and verification
+hashes, source revisions, patch baselines, and evidence paths are frozen into
+the child attempt before workspace mutation. Conductor revalidates the bindings,
+applies patches without repository hooks, and creates a deterministic detached
+commit whose sole parent is the authoritative source revision. That commit has
+no branch or Conductor ref and is reconstructable from durable evidence. It is
+a disposable proposal baseline, never a merge or acceptance decision. The
+child patch and path scope are measured from that derived baseline, so inherited
+parent changes cannot launder wider authority into the child contract.
 
 The local dispatcher lease is generation-fenced. Expiration alone never
 authorizes stealing from a live same-host process, so machine suspend cannot

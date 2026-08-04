@@ -2,8 +2,14 @@ import { spawn } from "node:child_process";
 import { open, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { AttemptManifest } from "../contracts/attempt.js";
 import {
+  proposalLineageSchema,
+  type AttemptManifest,
+  type ProposalContribution,
+  type ProposalLineage,
+} from "../contracts/attempt.js";
+import {
+  fingerprint,
   freezeJobRequest,
   jobRequestSchema,
   type JobContract,
@@ -52,6 +58,13 @@ export interface RunJobResult {
 
 export type AttemptArtifactName = keyof AttemptManifest["artifacts"];
 
+export class ProposalLineageError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProposalLineageError";
+  }
+}
+
 export class Conductor {
   private readonly activeAttempts = new Map<string, AbortController>();
   private readonly executions = new Map<string, Promise<AttemptManifest>>();
@@ -96,7 +109,10 @@ export class Conductor {
     return this.startReservedAttempt(reserved.attemptId);
   }
 
-  async reservePreparedAttempt(jobId: string): Promise<RunJobResult> {
+  async reservePreparedAttempt(
+    jobId: string,
+    parentAttemptIds: string[] = [],
+  ): Promise<RunJobResult> {
     const contract = await this.store.readJob(jobId);
     const adapter = this.workers.get(contract.worker.adapterId);
     if (!adapter.description.available) {
@@ -104,7 +120,18 @@ export class Conductor {
         `Worker adapter is not available: ${contract.worker.adapterId}`,
       );
     }
-    const attemptReservation = await this.store.reserveAttempt(contract);
+    let lineage: ProposalLineage | undefined;
+    if (parentAttemptIds.length) {
+      try {
+        lineage = await this.buildProposalLineage(contract, parentAttemptIds);
+      } catch (error) {
+        throw new ProposalLineageError(errorMessage(error));
+      }
+    }
+    const attemptReservation = await this.store.reserveAttempt(
+      contract,
+      lineage,
+    );
     return summarize(attemptReservation.manifest, false);
   }
 
@@ -163,6 +190,10 @@ export class Conductor {
     ) {
       throw new Error(`Attempt ${attemptId} is not terminal`);
     }
+    const contract = await this.store.readJob(manifest.jobId);
+    if (manifest.lineage?.status === "composed") {
+      await this.validateProposalLineage(contract, manifest.lineage);
+    }
     const target = path.join(
       path.dirname(manifest.artifacts.manifest),
       "review-packet.json",
@@ -181,7 +212,6 @@ export class Conductor {
       }
     }
 
-    const contract = await this.store.readJob(manifest.jobId);
     const verification = await this.getVerification(attemptId);
     const changedPaths = JSON.parse(
       await readFile(manifest.artifacts.changedPaths, "utf8"),
@@ -280,6 +310,123 @@ export class Conductor {
       verificationStatus: "ineligible",
       failure: { kind: "cancelled", message },
     });
+  }
+
+  private async buildProposalLineage(
+    contract: JobContract,
+    parentAttemptIds: string[],
+  ): Promise<ProposalLineage> {
+    const directParentAttemptIds = [...new Set(parentAttemptIds)];
+    const contributions = new Map<string, ProposalContribution>();
+    const add = (candidate: ProposalContribution): void => {
+      const existing = contributions.get(candidate.attemptId);
+      if (existing && fingerprint(existing) !== fingerprint(candidate)) {
+        throw new Error(
+          `Proposal lineage contains conflicting bindings for ${candidate.attemptId}`,
+        );
+      }
+      if (!existing) contributions.set(candidate.attemptId, candidate);
+    };
+
+    for (const attemptId of directParentAttemptIds) {
+      const parent = await this.getAttempt(attemptId);
+      if (parent.lineage) {
+        if (parent.lineage.status !== "composed") {
+          throw new Error(
+            `Parent attempt ${attemptId} has unresolved proposal lineage`,
+          );
+        }
+        for (const contribution of parent.lineage.contributions) {
+          add(contribution);
+        }
+      }
+      add(await this.bindProposalContribution(contract, parent));
+    }
+
+    const lineage = proposalLineageSchema.parse({
+      schema: "conductor.proposal-lineage/v1",
+      sourceBaseRevision: contract.repository.baseRevision,
+      directParentAttemptIds,
+      contributions: [...contributions.values()],
+      status: "pending",
+    });
+    await this.validateProposalLineage(contract, lineage);
+    return lineage;
+  }
+
+  private async bindProposalContribution(
+    childContract: JobContract,
+    parent: AttemptManifest,
+  ): Promise<ProposalContribution> {
+    const parentContract = await this.store.readJob(parent.jobId);
+    if (
+      !samePath(parentContract.repository.root, childContract.repository.root)
+    ) {
+      throw new Error(
+        `Proposal ${parent.attemptId} belongs to a different repository`,
+      );
+    }
+    if (
+      parentContract.repository.baseRevision !==
+      childContract.repository.baseRevision
+    ) {
+      throw new Error(
+        `Proposal ${parent.attemptId} starts from ${parentContract.repository.baseRevision}, not ${childContract.repository.baseRevision}`,
+      );
+    }
+    if (
+      parent.status !== "completed" ||
+      parent.verificationStatus !== "eligible" ||
+      !parent.workspace
+    ) {
+      throw new Error(
+        `Proposal ${parent.attemptId} is not a completed eligible workspace attempt`,
+      );
+    }
+    if (["rejected", "superseded"].includes(parent.reviewDisposition)) {
+      throw new Error(
+        `Proposal ${parent.attemptId} was ${parent.reviewDisposition} by its review authority`,
+      );
+    }
+    const verification = await this.getVerification(parent.attemptId);
+    if (!verification.eligibleForReview) {
+      throw new Error(
+        `Proposal ${parent.attemptId} lacks eligible deterministic evidence`,
+      );
+    }
+    const patchStat = await stat(parent.artifacts.proposalPatch);
+    return {
+      jobId: parent.jobId,
+      attemptId: parent.attemptId,
+      jobRequestFingerprint: parentContract.requestFingerprint,
+      sourceBaseRevision: parentContract.repository.baseRevision,
+      patchBaseRevision: parent.workspace.baseRevision,
+      patchPath: parent.artifacts.proposalPatch,
+      patchSha256: await sha256File(parent.artifacts.proposalPatch),
+      patchBytes: patchStat.size,
+      verificationPath: parent.artifacts.verification,
+      verificationSha256: await sha256File(parent.artifacts.verification),
+    };
+  }
+
+  private async validateProposalLineage(
+    contract: JobContract,
+    lineage: ProposalLineage,
+  ): Promise<void> {
+    if (lineage.sourceBaseRevision !== contract.repository.baseRevision) {
+      throw new Error("Proposal lineage source revision changed");
+    }
+    for (const expected of lineage.contributions) {
+      const actual = await this.bindProposalContribution(
+        contract,
+        await this.getAttempt(expected.attemptId),
+      );
+      if (fingerprint(actual) !== fingerprint(expected)) {
+        throw new Error(
+          `Proposal evidence binding changed for ${expected.attemptId}`,
+        );
+      }
+    }
   }
 
   async recoverInterruptedAttempt(
@@ -406,6 +553,47 @@ export class Conductor {
       });
       await this.writeVerification(manifest, verification);
 
+      if (manifest.lineage) {
+        const lineage = manifest.lineage;
+        try {
+          await this.validateProposalLineage(contract, lineage);
+          workspace = await this.workspaces.composeProposalBaseline(
+            workspace,
+            lineage.contributions,
+          );
+          manifest = await this.update(manifest, {
+            workspace: {
+              path: workspace.path,
+              baseRevision: workspace.baseRevision,
+              retained: true,
+            },
+            lineage: {
+              ...lineage,
+              status: "composed",
+              derivedRevision: workspace.baseRevision,
+              composedAt: new Date().toISOString(),
+              failure: undefined,
+            },
+          });
+        } catch (error) {
+          const message = errorMessage(error);
+          verification = { ...verification, eligibleForReview: false };
+          await this.writeVerification(manifest, verification);
+          manifest = await this.update(manifest, {
+            status: "needs-input",
+            finishedAt: new Date().toISOString(),
+            verificationStatus: "ineligible",
+            lineage: {
+              ...lineage,
+              status: "rejected",
+              failure: message,
+            },
+            failure: { kind: "composition-failed", message },
+          });
+          throw new TerminalAttempt(manifest);
+        }
+      }
+
       if (contract.setupCommands.length > 0) {
         const commands = await runCommandSequence({
           commands: contract.setupCommands,
@@ -462,7 +650,13 @@ export class Conductor {
       }
 
       const adapter = this.workers.get(contract.worker.adapterId);
-      const invocation = adapter.buildInvocation(contract, workspace.path);
+      const invocation = adapter.buildInvocation(contract, workspace.path, {
+        attemptId: manifest.attemptId,
+        workspaceBaseRevision: workspace.baseRevision,
+        sourceBaseRevision: contract.repository.baseRevision,
+        proposalContributionAttemptIds:
+          manifest.lineage?.contributions.map((entry) => entry.attemptId) ?? [],
+      });
       manifest = await this.update(manifest, {
         status: "running",
         invocation: {
@@ -867,6 +1061,12 @@ function classifyFailure(
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function samePath(left: string, right: string): boolean {
+  return process.platform === "win32"
+    ? path.resolve(left).toLowerCase() === path.resolve(right).toLowerCase()
+    : path.resolve(left) === path.resolve(right);
 }
 
 function isAttemptTerminal(status: AttemptManifest["status"]): boolean {

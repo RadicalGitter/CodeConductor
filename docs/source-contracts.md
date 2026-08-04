@@ -72,6 +72,10 @@ last scan, source run, and error. A changed revision currently recompiles the
 whole enabled graph. Selective semantic invalidation is deferred until real
 gameplay evidence shows which dependency propagation rule is useful.
 
-Dependency order does not yet compose one unaccepted patch into the next
-worker's base. Each job remains frozen at the scanned revision. Proposal-only
-composition is tracked in the Extra High review register.
+Every job remains frozen at the scanned source revision. Once a dependency has
+a completed eligible attempt, its exact hash-bound proposal lineage is composed
+into the dependent worker's effective baseline. The derived Git commit is
+detached, unreferenced, reconstructable, and proposal-only; no project ref or
+canonical checkout is changed. A dependent worker's own path scope is measured
+from that derived baseline. Conflicts or changed evidence quarantine the child
+before its worker starts.

@@ -2,7 +2,11 @@ import type { JobContract } from "../contracts/job.js";
 import type { ProcessInvocation } from "../runtime/process-runner.js";
 import { selectRequestedEnvironment } from "../runtime/environment.js";
 import { resolveExecutablePath } from "../runtime/executable.js";
-import { buildWorkerPrompt, type WorkerAdapter } from "./adapter.js";
+import {
+  buildWorkerPrompt,
+  type WorkerAdapter,
+  type WorkerAttemptContext,
+} from "./adapter.js";
 
 export class CodexAdapter implements WorkerAdapter {
   readonly description;
@@ -29,6 +33,7 @@ export class CodexAdapter implements WorkerAdapter {
   buildInvocation(
     contract: JobContract,
     workspacePath: string,
+    attemptContext?: WorkerAttemptContext,
   ): ProcessInvocation {
     if (!this.executable) {
       throw new Error(
@@ -48,7 +53,7 @@ export class CodexAdapter implements WorkerAdapter {
     if (typeof model === "string" && model) args.push("--model", model);
     const profile = contract.worker.options.profile;
     if (typeof profile === "string" && profile) args.push("--profile", profile);
-    args.push(buildWorkerPrompt(contract));
+    args.push(buildWorkerPrompt(contract, attemptContext));
 
     return {
       executable: this.executable,

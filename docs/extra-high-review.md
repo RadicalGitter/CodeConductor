@@ -37,12 +37,26 @@ than sharing its queue directory.
 
 ## Dependent proposal composition
 
-Independent contracts can run concurrently and dependency order is enforced,
-but a dependent job still starts from its own frozen repository revision. To
-let later gameplay contracts consume earlier unaccepted proposals, design a
-proposal-only composition lineage—likely immutable Git trees/commits under a
-Conductor-owned ref namespace—without laundering that lineage into canonical
-project history or invoking repository hooks.
+**Outcome: resolved as hash-bound proposal ancestry.** A child reservation
+binds exact eligible parent attempts and recursively flattens their ancestry.
+Every contribution records its job fingerprint, source and patch baseline,
+patch path/size/SHA-256, and verification path/SHA-256. Bindings are revalidated
+before application. Ordered patches are applied to a fresh worktree and turned
+into a deterministic detached commit without hooks, merges, branch updates, or
+even a Conductor-owned ref. The child patch and scope are measured from this
+effective baseline, not from canonical source. Worker prompts identify both
+revisions and explicitly call inherited changes unaccepted context.
+
+Conflicts, tampering, missing evidence, ineligible, rejected, or superseded
+parents, repository mismatch, or source-revision mismatch quarantine the child
+before its worker starts. Review handoff revalidates ancestry again. Canaries
+cover a three-level lineage, exact baseline reconstruction, post-reservation
+patch tampering, and conflicting sibling proposals.
+
+Residual boundary: cross-revision rebasing and semantic conflict resolution are
+not automatic. The detached derived object may be garbage-collected after its
+worktree disappears; durable contribution evidence is the authority and can
+reconstruct it exactly.
 
 ## Hostile generated-code execution
 

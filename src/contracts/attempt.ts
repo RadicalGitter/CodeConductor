@@ -22,6 +22,36 @@ export const processGuardianIdentitySchema = z.object({
   workerPid: z.number().int().positive().optional(),
 });
 
+export const proposalContributionSchema = z.object({
+  jobId: z.string().min(1),
+  attemptId: z.string().min(1),
+  jobRequestFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  sourceBaseRevision: z.string().regex(/^[a-f0-9]{40,64}$/i),
+  patchBaseRevision: z.string().regex(/^[a-f0-9]{40,64}$/i),
+  patchPath: z.string().min(1),
+  patchSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  patchBytes: z.number().int().nonnegative(),
+  verificationPath: z.string().min(1),
+  verificationSha256: z.string().regex(/^[a-f0-9]{64}$/),
+});
+
+export const proposalLineageSchema = z.object({
+  schema: z.literal("conductor.proposal-lineage/v1"),
+  sourceBaseRevision: z.string().regex(/^[a-f0-9]{40,64}$/i),
+  directParentAttemptIds: z.array(z.string().min(1)).min(1).max(256),
+  contributions: z.array(proposalContributionSchema).min(1).max(256),
+  status: z.enum(["pending", "composed", "rejected"]),
+  derivedRevision: z
+    .string()
+    .regex(/^[a-f0-9]{40,64}$/i)
+    .optional(),
+  composedAt: z.string().datetime().optional(),
+  failure: z.string().min(1).optional(),
+});
+
+export type ProposalContribution = z.infer<typeof proposalContributionSchema>;
+export type ProposalLineage = z.infer<typeof proposalLineageSchema>;
+
 export const failureKindSchema = z.enum([
   "invalid-job",
   "adapter-unavailable",
@@ -33,6 +63,7 @@ export const failureKindSchema = z.enum([
   "timeout",
   "cancelled",
   "orphaned",
+  "composition-failed",
   "orchestrator-error",
 ]);
 
@@ -54,6 +85,7 @@ export const attemptManifestSchema = z.object({
     })
     .optional(),
   guardian: processGuardianIdentitySchema.optional(),
+  lineage: proposalLineageSchema.optional(),
   invocation: z
     .object({
       executable: z.string().min(1),
@@ -106,6 +138,7 @@ export function createReservedAttempt(input: {
   adapterId: string;
   createdAt?: Date;
   artifacts: AttemptManifest["artifacts"];
+  lineage?: ProposalLineage;
 }): AttemptManifest {
   return attemptManifestSchema.parse({
     schema: "conductor.attempt/v1",
@@ -116,6 +149,7 @@ export function createReservedAttempt(input: {
     status: "reserved",
     createdAt: (input.createdAt ?? new Date()).toISOString(),
     artifacts: input.artifacts,
+    lineage: input.lineage,
     reviewDisposition: "not-requested",
     verificationStatus: "not-run",
   });

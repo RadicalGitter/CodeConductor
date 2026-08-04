@@ -4,7 +4,11 @@ import { selectRequestedEnvironment } from "../runtime/environment.js";
 import { resolveExecutablePath } from "../runtime/executable.js";
 import { statSync } from "node:fs";
 import path from "node:path";
-import { buildWorkerPrompt, type WorkerAdapter } from "./adapter.js";
+import {
+  buildWorkerPrompt,
+  type WorkerAdapter,
+  type WorkerAttemptContext,
+} from "./adapter.js";
 
 export class KodeAdapter implements WorkerAdapter {
   readonly description;
@@ -41,6 +45,7 @@ export class KodeAdapter implements WorkerAdapter {
   buildInvocation(
     contract: JobContract,
     workspacePath: string,
+    attemptContext?: WorkerAttemptContext,
   ): ProcessInvocation {
     const model = contract.worker.options.model;
     const tools = kodeToolsForContract(contract, workspacePath);
@@ -68,7 +73,7 @@ export class KodeAdapter implements WorkerAdapter {
         String(this.maxTurns),
         ...(typeof model === "string" && model ? ["--model", model] : []),
         "--print",
-        buildWorkerPrompt(contract),
+        buildWorkerPrompt(contract, attemptContext),
       ],
       cwd: workspacePath,
       env: selectRequestedEnvironment(this.environmentKeys),

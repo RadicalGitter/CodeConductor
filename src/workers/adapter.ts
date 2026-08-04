@@ -16,7 +16,15 @@ export interface WorkerAdapter {
   buildInvocation(
     contract: JobContract,
     workspacePath: string,
+    attemptContext?: WorkerAttemptContext,
   ): ProcessInvocation;
+}
+
+export interface WorkerAttemptContext {
+  attemptId: string;
+  workspaceBaseRevision: string;
+  sourceBaseRevision: string;
+  proposalContributionAttemptIds: string[];
 }
 
 export class WorkerRegistry {
@@ -46,7 +54,10 @@ export class WorkerRegistry {
   }
 }
 
-export function buildWorkerPrompt(contract: JobContract): string {
+export function buildWorkerPrompt(
+  contract: JobContract,
+  attemptContext?: WorkerAttemptContext,
+): string {
   const allowed = contract.scope.allowedPaths.length
     ? contract.scope.allowedPaths.join(", ")
     : "(the assigned worktree; deterministic post-run scope checks still apply)";
@@ -61,12 +72,21 @@ export function buildWorkerPrompt(contract: JobContract): string {
     : "(none)";
   const escalations = contract.escalateWhen.join("\n- ");
 
+  const lineageNotice = attemptContext?.proposalContributionAttemptIds.length
+    ? `The effective baseline includes these still-unaccepted proposal attempts: ${attemptContext.proposalContributionAttemptIds.join(", ")}. Their presence is context, not canonical acceptance.`
+    : "The effective baseline is the frozen source revision.";
+  const baseline = attemptContext
+    ? `Frozen source revision: ${attemptContext.sourceBaseRevision}
+Effective workspace baseline: ${attemptContext.workspaceBaseRevision}
+${lineageNotice}`
+    : `Frozen source revision: ${contract.repository.baseRevision}`;
+
   return `You are one coding worker operating inside an isolated Git worktree.
 
 Complete this bounded ${contract.taskClass} job:
 ${contract.objective}
 
-Frozen base revision: ${contract.repository.baseRevision}
+${baseline}
 Allowed path declaration: ${allowed}
 Forbidden path declaration: ${forbidden}
 

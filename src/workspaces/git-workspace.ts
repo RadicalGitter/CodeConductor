@@ -1,7 +1,9 @@
 import { spawn } from "node:child_process";
-import { mkdir, realpath, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
+import type { ProposalContribution } from "../contracts/attempt.js";
 import { selectParentEnvironment } from "../runtime/environment.js";
 
 export interface GitWorkspace {
@@ -83,6 +85,82 @@ export class GitWorkspaceManager {
     await git(workspace.repositoryRoot, ["worktree", "prune"]);
   }
 
+  async composeProposalBaseline(
+    workspace: GitWorkspace,
+    contributions: ProposalContribution[],
+  ): Promise<GitWorkspace> {
+    if (contributions.length === 0) return workspace;
+    const actualRevision = await git(workspace.path, ["rev-parse", "HEAD"]);
+    if (actualRevision !== workspace.baseRevision) {
+      throw new Error(
+        `Composition workspace moved from ${workspace.baseRevision} to ${actualRevision}`,
+      );
+    }
+
+    try {
+      for (const contribution of contributions) {
+        const patch = await readFile(contribution.patchPath);
+        if (patch.byteLength !== contribution.patchBytes) {
+          throw new Error(
+            `Proposal patch size changed for ${contribution.attemptId}`,
+          );
+        }
+        if (
+          createHash("sha256").update(patch).digest("hex") !==
+          contribution.patchSha256
+        ) {
+          throw new Error(
+            `Proposal patch hash changed for ${contribution.attemptId}`,
+          );
+        }
+        if (patch.byteLength === 0) continue;
+        await git(
+          workspace.path,
+          [
+            "apply",
+            "--index",
+            "--3way",
+            "--binary",
+            "--whitespace=nowarn",
+            "-",
+          ],
+          { input: patch },
+        );
+      }
+
+      const tree = await git(workspace.path, ["write-tree"]);
+      const message = [
+        "Conductor proposal-only composition",
+        "",
+        ...contributions.map(
+          (entry) =>
+            `${entry.attemptId} ${entry.patchSha256} from ${entry.patchBaseRevision}`,
+        ),
+        "",
+      ].join("\n");
+      const derivedRevision = await git(
+        workspace.path,
+        ["commit-tree", tree, "-p", workspace.baseRevision],
+        {
+          input: Buffer.from(message, "utf8"),
+          env: {
+            GIT_AUTHOR_NAME: "Conductor",
+            GIT_AUTHOR_EMAIL: "conductor@example.invalid",
+            GIT_AUTHOR_DATE: "2000-01-01T00:00:00 +0000",
+            GIT_COMMITTER_NAME: "Conductor",
+            GIT_COMMITTER_EMAIL: "conductor@example.invalid",
+            GIT_COMMITTER_DATE: "2000-01-01T00:00:00 +0000",
+          },
+        },
+      );
+      await git(workspace.path, ["reset", "--hard", derivedRevision]);
+      return { ...workspace, baseRevision: derivedRevision };
+    } catch (error) {
+      await git(workspace.path, ["reset", "--hard", workspace.baseRevision]);
+      throw new Error(`Proposal composition failed: ${errorMessage(error)}`);
+    }
+  }
+
   targetPath(attemptId: string): string {
     if (!/^[a-zA-Z0-9_.-]+$/.test(attemptId)) {
       throw new Error(`Unsafe workspace id: ${attemptId}`);
@@ -100,19 +178,27 @@ export class GitWorkspaceManager {
   }
 }
 
-async function git(cwd: string, args: string[]): Promise<string> {
+async function git(
+  cwd: string,
+  args: string[],
+  options: {
+    input?: Buffer;
+    env?: Record<string, string>;
+  } = {},
+): Promise<string> {
   const child = spawn("git", ["-C", cwd, ...args], {
     shell: false,
     windowsHide: true,
-    env: selectParentEnvironment(),
-    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...selectParentEnvironment(), ...options.env },
+    stdio: [options.input ? "pipe" : "ignore", "pipe", "pipe"],
   });
   let stdout = "";
   let stderr = "";
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => (stdout += chunk));
-  child.stderr.on("data", (chunk) => (stderr += chunk));
+  child.stdout!.setEncoding("utf8");
+  child.stderr!.setEncoding("utf8");
+  child.stdout!.on("data", (chunk) => (stdout += chunk));
+  child.stderr!.on("data", (chunk) => (stderr += chunk));
+  if (options.input) child.stdin!.end(options.input);
   const exitCode = await new Promise<number>((resolve, reject) => {
     child.once("error", reject);
     child.once("close", (code) => resolve(code ?? -1));
@@ -123,6 +209,10 @@ async function git(cwd: string, args: string[]): Promise<string> {
     );
   }
   return stdout.trim();
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function samePath(left: string, right: string): boolean {

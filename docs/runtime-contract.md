@@ -72,6 +72,18 @@ proposal stability. The worker output, worktree, and patch remain proposals.
 `reviewDisposition` starts at `not-requested`; no current tool can promote it to
 authoritative repository state.
 
+A queued dependency binds an exact eligible attempt, not merely a job name.
+The child manifest records the complete proposal ancestry with patch and
+verification SHA-256 values. Immediately before use, Conductor revalidates each
+terminal status, repository, source revision, evidence record, size, and hash.
+It applies the ordered patches into a fresh source-revision worktree and creates
+a deterministic detached commit without hooks or refs. Conflicts, missing
+evidence, known rejected or superseded parents, cross-repository ancestry,
+differing source revisions, and tampering become `needs-input` before the child
+worker starts. Review-packet creation revalidates the lineage again. The child
+worker is told both the frozen source and effective proposal baseline; its own
+scope and patch are evaluated only against the latter.
+
 Path rules are exact files or directory prefixes; glob syntax and traversal are
 rejected. Empty `allowedPaths` means no positive restriction, while forbidden
 and protected rules still apply. Setup commands run before the worker and must

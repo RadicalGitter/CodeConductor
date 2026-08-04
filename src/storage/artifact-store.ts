@@ -14,6 +14,7 @@ import {
   attemptManifestSchema,
   createReservedAttempt,
   type AttemptManifest,
+  type ProposalLineage,
 } from "../contracts/attempt.js";
 import { jobContractSchema, type JobContract } from "../contracts/job.js";
 
@@ -78,12 +79,19 @@ export class ArtifactStore {
     return jobContractSchema.parse(await this.readJson(this.jobPath(jobId)));
   }
 
-  async reserveAttempt(contract: JobContract): Promise<AttemptReservation> {
+  async reserveAttempt(
+    contract: JobContract,
+    lineage?: ProposalLineage,
+  ): Promise<AttemptReservation> {
     const attemptsRoot = this.attemptsRoot(contract.jobId);
     await mkdir(attemptsRoot, { recursive: true });
 
     for (let ordinal = 1; ordinal <= 999_999; ordinal += 1) {
-      const reservation = await this.reserveAttemptAt(contract, ordinal);
+      const reservation = await this.reserveAttemptAt(
+        contract,
+        ordinal,
+        lineage,
+      );
       if (reservation.created) return reservation;
     }
 
@@ -195,6 +203,7 @@ export class ArtifactStore {
   private async reserveAttemptAt(
     contract: JobContract,
     ordinal: number,
+    lineage?: ProposalLineage,
   ): Promise<AttemptReservation> {
     const attemptId = `${contract.jobId}_a${ordinal.toString().padStart(4, "0")}`;
     const directory = this.attemptDirectory(contract.jobId, attemptId);
@@ -216,6 +225,7 @@ export class ArtifactStore {
         changedPaths: path.join(directory, "changed-paths.json"),
         verification: path.join(directory, "verification.json"),
       },
+      lineage,
     });
     try {
       await this.writeJsonAtomic(

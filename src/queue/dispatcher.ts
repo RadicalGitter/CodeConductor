@@ -6,7 +6,7 @@ import {
   type QueueItem,
 } from "../contracts/queue.js";
 import type { RunJobResult } from "../orchestrator/conductor.js";
-import { Conductor } from "../orchestrator/conductor.js";
+import { Conductor, ProposalLineageError } from "../orchestrator/conductor.js";
 import { QueueStore } from "./queue-store.js";
 
 export interface DispatcherOptions {
@@ -216,9 +216,31 @@ export class DurableDispatcher {
           continue;
         }
         if (this.active.size >= this.maxConcurrent) break;
-        const reserved = await this.conductor.reservePreparedAttempt(
-          item.jobId,
-        );
+        const parentAttemptIds = dependencies.map((dependency) => {
+          const attemptId = dependency?.completion?.attemptId;
+          if (!attemptId) {
+            throw new Error(
+              `Completed dependency ${dependency?.jobId ?? "unknown"} lacks attempt evidence`,
+            );
+          }
+          return attemptId;
+        });
+        let reserved: RunJobResult;
+        try {
+          reserved = await this.conductor.reservePreparedAttempt(
+            item.jobId,
+            parentAttemptIds,
+          );
+        } catch (error) {
+          if (error instanceof ProposalLineageError) {
+            await this.queue.update(item, {
+              status: "needs-input",
+              message: `Proposal lineage rejected before reservation: ${error.message}`,
+            });
+            continue;
+          }
+          throw error;
+        }
         const running = await this.queue.update(item, {
           status: "running",
           attemptId: reserved.attemptId,

@@ -50,7 +50,9 @@ remain reconstructable after restart.
 tracked exact-revision files, validated as a DAG, resolved through owner-side
 command profiles, recorded as source-run manifests, and enqueued idempotently.
 Persistent watches poll moving refs and record failures. Symbol-aware placement
-and proposal-lineage composition remain later refinements.
+remains a later refinement. Proposal-lineage composition is now implemented:
+dependent workers consume exact eligible ancestry through a hash-bound,
+deterministically reconstructable detached baseline.
 
 ## Slice 4 — queue and parallelism
 

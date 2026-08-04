@@ -3,7 +3,10 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { z } from "zod/v4";
 
-import type { AttemptManifest } from "../contracts/attempt.js";
+import {
+  proposalLineageSchema,
+  type AttemptManifest,
+} from "../contracts/attempt.js";
 import { jobContractSchema, type JobContract } from "../contracts/job.js";
 import {
   verificationRecordSchema,
@@ -41,6 +44,7 @@ export const reviewPacketSchema = z.object({
     adapterId: z.string().min(1),
     startedAt: z.string().datetime().optional(),
     finishedAt: z.string().datetime().optional(),
+    lineage: proposalLineageSchema.optional(),
   }),
   contract: jobContractSchema,
   verification: verificationRecordSchema,
@@ -108,6 +112,7 @@ export async function buildReviewPacket(input: {
       adapterId: input.manifest.adapterId,
       startedAt: input.manifest.startedAt,
       finishedAt: input.manifest.finishedAt,
+      lineage: input.manifest.lineage,
     },
     contract: input.contract,
     verification: input.verification,
@@ -119,6 +124,7 @@ export async function buildReviewPacket(input: {
       instructions: [
         "Review the bound proposal patch against the frozen contract and repository evidence.",
         "Treat deterministic verification as evidence, not proof of semantic correctness.",
+        "When proposal lineage is present, treat every contribution as unaccepted context and retrieve its hash-bound patch before judging the derived change.",
         "Return fail for any actionable defect and needs-context only when named evidence is missing.",
         "Do not accept, merge, execute, or mutate repository state.",
       ],
