@@ -20,13 +20,46 @@ export const attemptLaunchOwnerSchema = z.object({
   claimedAt: z.string().datetime(),
 });
 
-export const processGuardianIdentitySchema = z.object({
+export const processContainmentSchema = z.object({
+  schema: z.literal("conductor.process-containment/v1"),
+  kind: z.enum(["windows-job", "posix-process-group"]),
+  ownerPid: z.number().int().positive(),
+  kernelEnforced: z.boolean(),
+  killOnOwnerClose: z.boolean(),
+});
+
+const processGuardianIdentityV1Schema = z.object({
   schema: z.literal("conductor.process-guardian/v1"),
   nonce: z.string().uuid(),
   guardianPid: z.number().int().positive(),
   parentPid: z.number().int().positive(),
   createdAt: z.string().datetime(),
   workerPid: z.number().int().positive().optional(),
+});
+
+const processGuardianIdentityV2Schema = processGuardianIdentityV1Schema
+  .omit({ schema: true })
+  .extend({
+    schema: z.literal("conductor.process-guardian/v2"),
+    containment: processContainmentSchema,
+  });
+
+export const processGuardianIdentitySchema = z.discriminatedUnion("schema", [
+  processGuardianIdentityV1Schema,
+  processGuardianIdentityV2Schema,
+]);
+
+export const processTerminationEvidenceSchema = z.object({
+  schema: z.literal("conductor.process-termination/v1"),
+  status: z.enum(["proven", "failed", "unknown"]),
+  method: z.enum([
+    "not-started",
+    "windows-job-terminate-and-empty",
+    "posix-process-group-empty",
+    "guardian-exit-unverified",
+  ]),
+  observedAt: z.string().datetime(),
+  detail: z.string().min(1).optional(),
 });
 
 export const proposalContributionSchema = z.object({
@@ -132,6 +165,8 @@ export const attemptManifestSchema = z.object({
       timedOut: z.boolean(),
       cancelled: z.boolean(),
       durationMs: z.number().int().nonnegative(),
+      containment: processContainmentSchema.optional(),
+      termination: processTerminationEvidenceSchema.optional(),
     })
     .optional(),
   artifacts: z.object({

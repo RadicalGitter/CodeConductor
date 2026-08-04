@@ -5,13 +5,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { isProcessAlive, runProcess } from "../src/runtime/process-runner.js";
+import { resolveExecutablePath } from "../src/runtime/executable.js";
 
 test("captures stdout and stderr without a shell", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "conductor-process-"));
   try {
     const result = await runProcess(
       {
-        executable: process.execPath,
+        executable: resolveExecutablePath("node")!,
         args: ["-e", "console.log('out'); console.error('err')"],
         cwd: root,
       },
@@ -104,6 +105,39 @@ test("worker output cannot spoof the guardian control channel", async () => {
   }
 });
 
+test("guardian evidence failure prevents worker launch", async () => {
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "conductor-guardian-gate-"),
+  );
+  const canary = path.join(root, "unauthorized-worker-started.txt");
+
+  try {
+    await expect(
+      runProcess(
+        {
+          executable: process.execPath,
+          args: [
+            "-e",
+            `require("node:fs").writeFileSync(${JSON.stringify(canary)}, "started")`,
+          ],
+          cwd: root,
+        },
+        {
+          stdoutPath: path.join(root, "stdout.log"),
+          stderrPath: path.join(root, "stderr.log"),
+          timeoutMs: 5_000,
+          onGuardianReady: () => {
+            throw new Error("guardian evidence write failed");
+          },
+        },
+      ),
+    ).rejects.toThrow("guardian evidence write failed");
+    expect(await exists(canary)).toBe(false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 10_000);
+
 test("cancellation terminates descendants, not only the direct worker", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "conductor-tree-"));
   const canary = path.join(root, "survived.txt");
@@ -116,7 +150,7 @@ test("cancellation terminates descendants, not only the direct worker", async ()
   try {
     const result = await runProcess(
       {
-        executable: process.execPath,
+        executable: resolveExecutablePath("node")!,
         args: [fixture, canary],
         cwd: root,
         cleanup: {
@@ -139,9 +173,101 @@ test("cancellation terminates descendants, not only the direct worker", async ()
       },
     );
     expect(result.cancelled).toBe(true);
+    expect(result.termination.status).toBe("proven");
     await Bun.sleep(1_000);
     expect(await exists(canary)).toBe(false);
     expect(await exists(cleanupCanary)).toBe(true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 10_000);
+
+test("normal worker exit does not leave a detached descendant", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "conductor-normal-exit-"));
+  const canary = path.join(root, "normal-exit-descendant-survived.txt");
+  const fixture = fileURLToPath(
+    new URL("./fixtures/normal-exit-descendant.ts", import.meta.url),
+  );
+
+  try {
+    const result = await runProcess(
+      {
+        executable: resolveExecutablePath("node")!,
+        args: [fixture, canary],
+        cwd: root,
+      },
+      {
+        stdoutPath: path.join(root, "stdout.log"),
+        stderrPath: path.join(root, "stderr.log"),
+        timeoutMs: 5_000,
+      },
+    );
+    expect(result.exitCode).toBe(0);
+    expect(result.containment?.kind).toBe("windows-job");
+    expect(result.termination.status).toBe("proven");
+    await Bun.sleep(1_400);
+    expect(await exists(canary)).toBe(false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 10_000);
+
+test("normal Bun worker exit does not leave a detached descendant", async () => {
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "conductor-normal-bun-exit-"),
+  );
+  const canary = path.join(root, "normal-bun-exit-descendant-survived.txt");
+  const fixture = fileURLToPath(
+    new URL("./fixtures/normal-exit-descendant.ts", import.meta.url),
+  );
+
+  try {
+    const result = await runProcess(
+      {
+        executable: process.execPath,
+        args: [fixture, canary],
+        cwd: root,
+      },
+      {
+        stdoutPath: path.join(root, "stdout.log"),
+        stderrPath: path.join(root, "stderr.log"),
+        timeoutMs: 5_000,
+      },
+    );
+    expect(result.exitCode).toBe(0);
+    expect(result.containment?.kind).toBe("windows-job");
+    expect(result.termination.status).toBe("proven");
+    await Bun.sleep(1_400);
+    expect(await exists(canary)).toBe(false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 10_000);
+
+test("timeout terminates descendants with positive closure evidence", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "conductor-tree-timeout-"));
+  const canary = path.join(root, "timeout-descendant-survived.txt");
+  const fixture = fileURLToPath(
+    new URL("./fixtures/child-tree.ts", import.meta.url),
+  );
+
+  try {
+    const result = await runProcess(
+      {
+        executable: process.execPath,
+        args: [fixture, canary],
+        cwd: root,
+      },
+      {
+        stdoutPath: path.join(root, "stdout.log"),
+        stderrPath: path.join(root, "stderr.log"),
+        timeoutMs: 300,
+      },
+    );
+    expect(result.timedOut).toBe(true);
+    expect(result.termination.status).toBe("proven");
+    await Bun.sleep(1_000);
+    expect(await exists(canary)).toBe(false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

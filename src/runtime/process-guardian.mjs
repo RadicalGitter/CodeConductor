@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { closeSync, openSync } from "node:fs";
 
 const control = process.stdin;
 const EVENT_PREFIX = "\u001eCONDUCTOR_EVENT ";
@@ -7,6 +8,8 @@ let worker;
 let stopping = false;
 let started = false;
 let buffer = "";
+let workerStdout;
+let workerStderr;
 
 control.setEncoding("utf8");
 control.on("data", (chunk) => {
@@ -22,13 +25,15 @@ control.on("data", (chunk) => {
   ) {
     throw new Error("Invalid process guardian start message");
   }
+  workerStdout = openSync(message.stdoutPath, "a");
+  workerStderr = openSync(message.stderrPath, "a");
   worker = spawn(message.invocation.executable, message.invocation.args, {
     cwd: message.invocation.cwd,
     env: message.invocation.env,
     shell: false,
     windowsHide: true,
     detached: process.platform !== "win32",
-    stdio: ["ignore", 3, 4],
+    stdio: ["ignore", workerStdout, workerStderr],
   });
   worker.once("spawn", () => {
     send({ type: "worker-spawn", nonce: message.nonce, pid: worker.pid });
@@ -42,12 +47,7 @@ control.on("data", (chunk) => {
   });
   worker.once("close", (exitCode, signal) => {
     if (stopping) return;
-    send({
-      type: "worker-close",
-      exitCode,
-      signal,
-    });
-    finish(exitCode ?? 1);
+    void finishWorker(exitCode, signal);
   });
 });
 
@@ -64,9 +64,67 @@ async function stop(reason) {
   if (stopping) return;
   stopping = true;
   send({ type: "guardian-stop", reason });
-  if (worker?.pid)
-    await terminateProcessTree(worker.pid).catch(() => undefined);
+  if (worker?.pid) {
+    try {
+      await terminateProcessTree(worker.pid);
+      if (process.platform !== "win32") {
+        send({
+          type: "tree-cleanup",
+          status: "proven",
+          method: "posix-process-group-empty",
+        });
+      }
+    } catch (error) {
+      if (process.platform !== "win32") {
+        send({
+          type: "tree-cleanup",
+          status: "failed",
+          method: "posix-process-group",
+          detail: error.message,
+        });
+      }
+    }
+  }
   finish(125);
+}
+
+async function finishWorker(exitCode, signal) {
+  stopping = true;
+  send({
+    type: "worker-close",
+    exitCode,
+    signal,
+  });
+  if (process.platform !== "win32" && worker?.pid) {
+    try {
+      await terminateProcessTree(worker.pid);
+      send({
+        type: "tree-cleanup",
+        status: "proven",
+        method: "posix-process-group-empty",
+      });
+    } catch (error) {
+      send({
+        type: "tree-cleanup",
+        status: "failed",
+        method: "posix-process-group",
+        detail: error.message,
+      });
+    }
+  }
+  closeWorkerLogs();
+  finish(exitCode ?? 1);
+}
+
+function closeWorkerLogs() {
+  if (workerStdout !== undefined) {
+    closeSync(workerStdout);
+    workerStdout = undefined;
+  }
+  if (workerStderr !== undefined) {
+    closeSync(workerStderr);
+    workerStderr = undefined;
+  }
 }
 
 function send(value) {
@@ -102,6 +160,22 @@ async function terminateProcessTree(pid) {
     process.kill(-pid, "SIGKILL");
   } catch (error) {
     if (error?.code !== "ESRCH") throw error;
+  }
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (!isProcessGroupAlive(pid)) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  if (isProcessGroupAlive(pid)) {
+    throw new Error(`Process group ${pid} is still alive after SIGKILL`);
+  }
+}
+
+function isProcessGroupAlive(pid) {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
   }
 }
 
