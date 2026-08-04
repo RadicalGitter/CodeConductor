@@ -114,7 +114,65 @@ test("runs a durable proposal in an exact-revision worktree and replays idempote
     await rm(repository.root, { recursive: true, force: true });
     await rm(dataRoot, { recursive: true, force: true });
   }
-});
+}, 60_000);
+
+test("workspace cleanup failure is durable without rewriting worker outcome", async () => {
+  const repository = await createTestRepository();
+  const dataRoot = await mkdtemp(
+    path.join(os.tmpdir(), "conductor-cleanup-failure-"),
+  );
+  const store = new ArtifactStore(dataRoot);
+  const workspaces = new FailingRemovalWorkspaceManager(store.workspaceRoot());
+  const conductor = new Conductor(
+    store,
+    workspaces,
+    new WorkerRegistry([new FixtureAdapter()]),
+  );
+  let retainedWorkspace: GitWorkspace | undefined;
+
+  try {
+    const result = await runTestJob(conductor, {
+      objective: "Preserve a completed proposal when cleanup fails",
+      repositoryPath: repository.root,
+      adapterId: "fixture",
+      idempotencyKey: "workspace-cleanup-failure",
+      retainWorkspace: false,
+    });
+    retainedWorkspace = {
+      path: result.workspacePath!,
+      repositoryRoot: repository.root,
+      baseRevision: repository.revision,
+    };
+
+    expect(result.status).toBe("completed");
+    const manifest = await conductor.getAttempt(result.attemptId);
+    expect(manifest.status).toBe("completed");
+    expect(manifest.failure).toBeUndefined();
+    expect(await conductor.getAttemptCleanup(result.attemptId)).toMatchObject({
+      status: "failed",
+      evidence: [
+        expect.objectContaining({
+          subject: { kind: "process-tree", id: "worker" },
+          status: "proven",
+        }),
+        expect.objectContaining({
+          subject: { kind: "workspace", id: "worktree" },
+          status: "failed",
+          method: "workspace-remove",
+        }),
+      ],
+    });
+    expect(await exists(result.workspacePath!)).toBe(true);
+  } finally {
+    if (retainedWorkspace) {
+      await new GitWorkspaceManager(store.workspaceRoot()).remove(
+        retainedWorkspace,
+      );
+    }
+    await rm(repository.root, { recursive: true, force: true });
+    await rm(dataRoot, { recursive: true, force: true });
+  }
+}, 60_000);
 
 test("100 jittered simultaneous callers claim and launch one reserved attempt once", async () => {
   const repository = await createTestRepository();
@@ -179,7 +237,7 @@ test("100 jittered simultaneous callers claim and launch one reserved attempt on
     await rm(repository.root, { recursive: true, force: true });
     await rm(dataRoot, { recursive: true, force: true });
   }
-});
+}, 60_000);
 
 test("100 randomized claim races each enter the launch seam exactly once", async () => {
   const repository = await createTestRepository();
@@ -267,6 +325,12 @@ class CountingWorkspaceManager extends GitWorkspaceManager {
   }) {
     this.createCalls += 1;
     return super.create(input);
+  }
+}
+
+class FailingRemovalWorkspaceManager extends GitWorkspaceManager {
+  override async remove(_workspace: GitWorkspace): Promise<void> {
+    throw new Error("injected workspace cleanup failure");
   }
 }
 

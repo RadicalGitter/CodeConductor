@@ -1,10 +1,12 @@
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
-import { mkdir, readFile, realpath, stat } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, readFile, realpath, rm, stat } from "node:fs/promises";
 import path from "node:path";
 
 import type { ProposalContribution } from "../contracts/attempt.js";
 import { selectParentEnvironment } from "../runtime/environment.js";
+import { resolveExecutablePath } from "../runtime/executable.js";
+import { runProcess } from "../runtime/process-runner.js";
 
 export interface GitWorkspace {
   path: string;
@@ -76,13 +78,21 @@ export class GitWorkspaceManager {
 
   async remove(workspace: GitWorkspace): Promise<void> {
     const expected = this.assertManagedPath(workspace.path);
-    await git(workspace.repositoryRoot, [
-      "worktree",
-      "remove",
-      "--force",
-      expected,
-    ]);
-    await git(workspace.repositoryRoot, ["worktree", "prune"]);
+    const deadline = Date.now() + 30_000;
+    if (await exists(expected)) {
+      await boundedCleanupGit(
+        workspace.repositoryRoot,
+        ["worktree", "remove", "--force", expected],
+        this.workspaceRoot,
+        deadline,
+      );
+    }
+    await boundedCleanupGit(
+      workspace.repositoryRoot,
+      ["worktree", "prune"],
+      this.workspaceRoot,
+      deadline,
+    );
   }
 
   async composeProposalBaseline(
@@ -175,6 +185,54 @@ export class GitWorkspaceManager {
       throw new Error(`Refusing unmanaged workspace path: ${candidate}`);
     }
     return resolved;
+  }
+}
+
+async function boundedCleanupGit(
+  cwd: string,
+  args: string[],
+  artifactRoot: string,
+  deadline: number,
+): Promise<void> {
+  const remainingMs = deadline - Date.now();
+  if (remainingMs <= 5_000) {
+    throw new Error("Workspace cleanup deadline exhausted before Git closure");
+  }
+  const executable = resolveExecutablePath("git");
+  if (!executable) throw new Error("A real Git executable is required");
+  const identity = randomUUID();
+  const artifactDirectory = path.join(artifactRoot, ".cleanup-logs");
+  const stdoutPath = path.join(artifactDirectory, `${identity}.stdout.log`);
+  const stderrPath = path.join(artifactDirectory, `${identity}.stderr.log`);
+  try {
+    const result = await runProcess(
+      { executable, args: ["-C", cwd, ...args], cwd },
+      {
+        stdoutPath,
+        stderrPath,
+        timeoutMs: Math.min(10_000, remainingMs - 5_000),
+      },
+    );
+    const stderr = await readFile(stderrPath, "utf8");
+    if (result.termination.status !== "proven") {
+      throw new Error(
+        `git ${args[0] ?? ""} cleanup termination is ${result.termination.status}`,
+      );
+    }
+    if (result.timedOut) {
+      throw new Error(`git ${args[0] ?? ""} cleanup timed out`);
+    }
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `git ${args[0] ?? ""} failed (${result.exitCode}): ${stderr.trim()}`,
+      );
+    }
+  } finally {
+    await Promise.allSettled([
+      rm(stdoutPath, { force: true }),
+      rm(stderrPath, { force: true }),
+    ]);
+    await rm(artifactDirectory, { recursive: false }).catch(() => undefined);
   }
 }
 
