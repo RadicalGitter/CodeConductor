@@ -12,6 +12,7 @@ import {
   type LeaseInspectionState,
 } from "../contracts/reconcile.js";
 import { type AttemptManifest } from "../contracts/attempt.js";
+import type { AttemptCleanupRecord } from "../contracts/cleanup.js";
 import { type QueueItem } from "../contracts/queue.js";
 import { Conductor } from "../orchestrator/conductor.js";
 import { QueueStore } from "../queue/queue-store.js";
@@ -54,6 +55,7 @@ export class RuntimeReconciler {
     }
 
     let attempts: AttemptManifest[] = [];
+    const cleanupByAttempt = new Map<string, AttemptCleanupRecord>();
     try {
       attempts = await this.conductor.listAttempts();
     } catch (error) {
@@ -67,6 +69,26 @@ export class RuntimeReconciler {
       );
     }
 
+    for (const attempt of attempts) {
+      try {
+        cleanupByAttempt.set(
+          attempt.attemptId,
+          await this.conductor.getAttemptCleanup(attempt.attemptId),
+        );
+      } catch (error) {
+        issues.push(
+          issue({
+            kind: "attempt-cleanup-unreadable",
+            severity: "blocked",
+            summary: `Cleanup evidence for ${attempt.attemptId} could not be read: ${errorMessage(error)}`,
+            jobId: attempt.jobId,
+            attemptId: attempt.attemptId,
+            requiredAuthority: "owner-action",
+          }),
+        );
+      }
+    }
+
     if (
       !issues.some((candidate) =>
         ["queue-state-unreadable", "attempt-state-unreadable"].includes(
@@ -77,6 +99,24 @@ export class RuntimeReconciler {
       issues.push(
         ...inspectQueueAttemptRelationships(items, attempts, lease.state),
       );
+      for (const attempt of attempts) {
+        const cleanup = cleanupByAttempt.get(attempt.attemptId);
+        if (!cleanup || ["not-required", "proven"].includes(cleanup.status)) {
+          continue;
+        }
+        const activeOwner =
+          !isAttemptTerminal(attempt.status) && isLeaseActive(lease.state);
+        issues.push(
+          issue({
+            kind: "attempt-cleanup-unresolved",
+            severity: activeOwner ? "warning" : "blocked",
+            summary: `Attempt ${attempt.attemptId} cleanup is ${cleanup.status}; retry and evidence removal remain prohibited`,
+            jobId: attempt.jobId,
+            attemptId: attempt.attemptId,
+            requiredAuthority: activeOwner ? "wait-for-owner" : "owner-action",
+          }),
+        );
+      }
     }
 
     return runtimeReconciliationReportSchema.parse({

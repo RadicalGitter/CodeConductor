@@ -268,7 +268,7 @@ try {
     if ($owner.HasExited -or [IO.File]::Exists($StopPath)) {
       $exitCode = 125
       $activeBeforeTermination = [ConductorWindowsJob]::GetActiveProcesses($job)
-      [ConductorWindowsJob]::TerminateAndWait($job, 5000)
+      [ConductorWindowsJob]::TerminateAndWait($job, 4000)
       $child.WaitForExit()
       break
     }
@@ -294,14 +294,14 @@ try {
     if ($owner.HasExited -or [IO.File]::Exists($StopPath)) {
       $exitCode = 125
       $activeBeforeTermination = [ConductorWindowsJob]::GetActiveProcesses($job)
-      [ConductorWindowsJob]::TerminateAndWait($job, 5000)
+      [ConductorWindowsJob]::TerminateAndWait($job, 4000)
       $child.WaitForExit()
     }
     else {
       $child.WaitForExit()
       $exitCode = $child.ExitCode
       $activeBeforeTermination = [ConductorWindowsJob]::GetActiveProcesses($job)
-      [ConductorWindowsJob]::TerminateAndWait($job, 5000)
+      [ConductorWindowsJob]::TerminateAndWait($job, 4000)
     }
   }
   $child.StandardInput.Close()
@@ -320,7 +320,7 @@ catch {
   $failure = $_.Exception
   if ($job -ne [IntPtr]::Zero) {
     try {
-      [ConductorWindowsJob]::TerminateAndWait($job, 5000)
+      [ConductorWindowsJob]::TerminateAndWait($job, 1000)
     }
     catch {
       # The failure is reported below; handle close remains the final kill-on-close boundary.

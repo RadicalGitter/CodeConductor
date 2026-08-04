@@ -6,7 +6,7 @@ export type TransitionFailpointName =
   "after-reserve" | "after-snapshot" | "after-projection";
 
 export interface TransitionContext {
-  recordKind: "attempt" | "queue-item";
+  recordKind: "attempt" | "attempt-cleanup" | "queue-item";
   recordId: string;
   revision: number;
   directory: string;

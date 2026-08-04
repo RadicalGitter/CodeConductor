@@ -98,6 +98,8 @@ export const reconciliationIssueSchema = z.object({
     "lease-reconciliation-required",
     "queue-state-unreadable",
     "attempt-state-unreadable",
+    "attempt-cleanup-unreadable",
+    "attempt-cleanup-unresolved",
     "active-queue-missing-attempt",
     "queue-references-missing-attempt",
     "dispatch-operation-mismatch",

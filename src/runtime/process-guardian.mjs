@@ -70,8 +70,10 @@ async function stop(reason) {
       if (process.platform !== "win32") {
         send({
           type: "tree-cleanup",
-          status: "proven",
+          status: "unknown",
           method: "posix-process-group-empty",
+          detail:
+            "Process group is empty, but no cgroup proof excludes a descendant that created a new session",
         });
       }
     } catch (error) {
@@ -100,8 +102,10 @@ async function finishWorker(exitCode, signal) {
       await terminateProcessTree(worker.pid);
       send({
         type: "tree-cleanup",
-        status: "proven",
+        status: "unknown",
         method: "posix-process-group-empty",
+        detail:
+          "Process group is empty, but no cgroup proof excludes a descendant that created a new session",
       });
     } catch (error) {
       send({

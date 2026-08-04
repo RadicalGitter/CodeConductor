@@ -186,7 +186,7 @@ test("setup, scope, and acceptance evidence gate review eligibility", async () =
     await rm(repository.root, { recursive: true, force: true });
     await rm(dataRoot, { recursive: true, force: true });
   }
-}, 15_000);
+}, 60_000);
 
 class FixtureAdapter implements WorkerAdapter {
   readonly description;

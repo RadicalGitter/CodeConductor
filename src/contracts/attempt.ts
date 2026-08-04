@@ -55,11 +55,27 @@ export const processTerminationEvidenceSchema = z.object({
   method: z.enum([
     "not-started",
     "windows-job-terminate-and-empty",
+    "windows-job-owner-exit",
     "posix-process-group-empty",
     "guardian-exit-unverified",
   ]),
   observedAt: z.string().datetime(),
   detail: z.string().min(1).optional(),
+});
+
+export const processExecutionResultSchema = z.object({
+  pid: z.number().int().positive().optional(),
+  exitCode: z.number().int().nullable(),
+  signal: z.string().nullable(),
+  timedOut: z.boolean(),
+  cancelled: z.boolean(),
+  durationMs: z.number().int().nonnegative(),
+  containment: processContainmentSchema.optional(),
+  termination: processTerminationEvidenceSchema,
+});
+
+export const processResultSchema = processExecutionResultSchema.extend({
+  cleanup: processExecutionResultSchema.optional(),
 });
 
 export const proposalContributionSchema = z.object({
@@ -157,18 +173,7 @@ export const attemptManifestSchema = z.object({
       environmentKeys: z.array(z.string()),
     })
     .optional(),
-  process: z
-    .object({
-      pid: z.number().int().positive().optional(),
-      exitCode: z.number().int().nullable(),
-      signal: z.string().nullable(),
-      timedOut: z.boolean(),
-      cancelled: z.boolean(),
-      durationMs: z.number().int().nonnegative(),
-      containment: processContainmentSchema.optional(),
-      termination: processTerminationEvidenceSchema.optional(),
-    })
-    .optional(),
+  process: processResultSchema.optional(),
   artifacts: z.object({
     job: z.string().min(1),
     manifest: z.string().min(1),
@@ -178,6 +183,7 @@ export const attemptManifestSchema = z.object({
     repositoryStatus: z.string().min(1),
     changedPaths: z.string().min(1),
     verification: z.string().min(1),
+    cleanup: z.string().min(1).optional(),
   }),
   failure: z
     .object({

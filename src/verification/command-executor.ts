@@ -5,7 +5,11 @@ import type { CommandSpec, ExecutionBoundary } from "../contracts/job.js";
 import type { ExternalResource } from "../contracts/attempt.js";
 import { selectRequestedEnvironment } from "../runtime/environment.js";
 import { runProcess } from "../runtime/process-runner.js";
-import type { ProcessGuardianIdentity } from "../runtime/process-runner.js";
+import type {
+  ProcessExecutionResult,
+  ProcessGuardianIdentity,
+  ProcessResult,
+} from "../runtime/process-runner.js";
 import { buildSandboxedCommand } from "../sandbox/docker.js";
 import type { CommandEvidence } from "./types.js";
 
@@ -83,10 +87,14 @@ export async function executeCommand(input: {
   policy: ExecutionPolicy;
   signal: AbortSignal;
   onGuardianReady?: (identity: ProcessGuardianIdentity) => void | Promise<void>;
+  onProcessResult?: (result: ProcessResult) => void | Promise<void>;
   executionBoundary?: ExecutionBoundary;
   attemptId?: string;
   onExternalResource?: (resource: ExternalResource) => void | Promise<void>;
-  onExternalResourceReleased?: (resourceId: string) => void | Promise<void>;
+  onExternalResourceReleased?: (
+    resourceId: string,
+    cleanup: ProcessExecutionResult,
+  ) => void | Promise<void>;
 }): Promise<CommandEvidence> {
   const executionBoundary = input.executionBoundary ?? {
     kind: "host-worktree" as const,
@@ -178,7 +186,13 @@ export async function executeCommand(input: {
       signal: input.signal,
       onGuardianReady: input.onGuardianReady,
     });
+    await input.onProcessResult?.(process);
     if (executionBoundary.kind === "external-sandbox") {
+      if (!process.cleanup) {
+        throw new Error(
+          "External sandbox cleanup returned no process evidence",
+        );
+      }
       await input.onExternalResourceReleased?.(
         (
           boundaryEvidence as Extract<
@@ -186,6 +200,7 @@ export async function executeCommand(input: {
             { kind: "external-sandbox" }
           >
         ).containerName,
+        process.cleanup,
       );
     }
     return {

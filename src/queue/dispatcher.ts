@@ -394,13 +394,20 @@ export class DurableDispatcher {
     item: QueueItem,
     result: RunJobResult,
   ): Promise<void> {
+    const cleanupSafe = ["not-required", "proven"].includes(
+      result.cleanupStatus,
+    );
     const eligible =
-      result.status === "completed" && result.verificationStatus === "eligible";
+      result.status === "completed" &&
+      result.verificationStatus === "eligible" &&
+      cleanupSafe;
     const needsInput =
+      !cleanupSafe ||
       result.status === "needs-input" ||
       (result.status === "completed" && !eligible);
-    const queueStatus =
-      result.status === "cancelled"
+    const queueStatus = !cleanupSafe
+      ? "needs-input"
+      : result.status === "cancelled"
         ? "cancelled"
         : eligible
           ? "completed"
@@ -414,19 +421,23 @@ export class DurableDispatcher {
         attemptId: result.attemptId,
         attemptStatus: result.status,
         verificationStatus: result.verificationStatus,
+        cleanupStatus: result.cleanupStatus,
         finishedAt: new Date().toISOString(),
         artifacts: {
           manifest: result.artifacts.manifest,
           proposalPatch: result.artifacts.proposalPatch,
           changedPaths: result.artifacts.changedPaths,
           verification: result.artifacts.verification,
+          cleanup: result.artifacts.cleanup,
         },
       },
       message:
         result.failure?.message ??
-        (needsInput
-          ? "Deterministic verification marked proposal ineligible"
-          : undefined),
+        (!cleanupSafe
+          ? `Attempt cleanup is ${result.cleanupStatus}; retry and evidence removal are prohibited`
+          : needsInput
+            ? "Deterministic verification marked proposal ineligible"
+            : undefined),
     });
   }
 
@@ -488,7 +499,10 @@ export class DurableDispatcher {
       }
       const manifest = await this.conductor.getAttempt(item.attemptId);
       if (isAttemptTerminal(manifest.status)) {
-        await this.finishItem(item, summarizeManifest(manifest));
+        await this.finishItem(
+          item,
+          await this.conductor.waitForAttempt(item.attemptId),
+        );
         continue;
       }
       const recovery = await this.conductor.recoverInterruptedAttempt(
@@ -506,12 +520,16 @@ export class DurableDispatcher {
               : `Recovered orphan ${item.attemptId}; a new attempt is safe`,
         });
       } else {
+        const cleanupStatus = await this.conductor
+          .getAttemptCleanup(item.attemptId)
+          .then((cleanup) => cleanup.status)
+          .catch(() => "unknown" as const);
         await this.queue.update(item, {
           status: "needs-input",
           message:
             recovery.disposition === "still-running"
               ? `Guardian ${recovery.manifest.guardian?.guardianPid} for ${item.attemptId} is still alive; automatic duplication is prohibited`
-              : `Attempt ${item.attemptId} lacks verifiable guardian identity; automatic duplication is prohibited`,
+              : `Attempt ${item.attemptId} cleanup is ${cleanupStatus}; automatic duplication is prohibited`,
         });
       }
     }
@@ -605,22 +623,6 @@ function isAttemptTerminal(status: string): boolean {
 
 function dispatchKey(jobId: string, dispatchOperationId: string): string {
   return `${jobId}\0${dispatchOperationId}`;
-}
-
-function summarizeManifest(
-  manifest: Awaited<ReturnType<Conductor["getAttempt"]>>,
-): RunJobResult {
-  return {
-    jobId: manifest.jobId,
-    attemptId: manifest.attemptId,
-    status: manifest.status,
-    idempotentReplay: false,
-    workspacePath: manifest.workspace?.path,
-    workspaceRetained: manifest.workspace?.retained,
-    artifacts: manifest.artifacts,
-    failure: manifest.failure,
-    verificationStatus: manifest.verificationStatus,
-  };
 }
 
 function boundedInteger(

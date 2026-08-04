@@ -10,6 +10,13 @@ import {
   type ProposalContribution,
   type ProposalLineage,
 } from "../contracts/attempt.js";
+import type {
+  AttemptCleanupRecord,
+  CleanupEvidence,
+  CleanupRequirement,
+  CleanupSubject,
+} from "../contracts/cleanup.js";
+import { latestCleanupEvidence } from "../contracts/cleanup.js";
 import {
   fingerprint,
   freezeJobRequest,
@@ -19,7 +26,9 @@ import {
 import {
   isProcessAlive,
   runProcess,
+  type ProcessExecutionResult,
   type ProcessGuardianIdentity,
+  type ProcessResult,
 } from "../runtime/process-runner.js";
 import { selectParentEnvironment } from "../runtime/environment.js";
 import { SandboxProfiles, validateSandboxCommand } from "../sandbox/docker.js";
@@ -57,6 +66,7 @@ export interface RunJobResult {
   artifacts: AttemptManifest["artifacts"];
   failure?: AttemptManifest["failure"];
   verificationStatus: AttemptManifest["verificationStatus"];
+  cleanupStatus: AttemptCleanupRecord["status"];
 }
 
 export type AttemptArtifactName = keyof AttemptManifest["artifacts"];
@@ -143,7 +153,7 @@ export class Conductor {
       lineage,
       dispatchOperationId,
     );
-    return summarize(attemptReservation.manifest, false);
+    return this.summarize(attemptReservation.manifest, false);
   }
 
   async startReservedAttempt(
@@ -195,7 +205,7 @@ export class Conductor {
         claimedAt: new Date().toISOString(),
       },
     });
-    return summarize(claimed, false);
+    return this.summarize(claimed, false);
   }
 
   async launchClaimedAttempt(
@@ -224,7 +234,7 @@ export class Conductor {
       throw new Error(`Attempt ${attemptId} is already executing`);
     }
     this.launchAttempt(contract, manifest);
-    return summarize(manifest, false);
+    return this.summarize(manifest, false);
   }
 
   async waitForAttempt(attemptId: string): Promise<RunJobResult> {
@@ -232,7 +242,7 @@ export class Conductor {
     const manifest = execution
       ? await execution
       : await this.getAttempt(attemptId);
-    return summarize(manifest, false);
+    return this.summarize(manifest, false);
   }
 
   async getAttempt(attemptId: string): Promise<AttemptManifest> {
@@ -241,6 +251,11 @@ export class Conductor {
 
   async listAttempts(): Promise<AttemptManifest[]> {
     return this.store.listAttempts();
+  }
+
+  async getAttemptCleanup(attemptId: string): Promise<AttemptCleanupRecord> {
+    const manifest = await this.getAttempt(attemptId);
+    return this.store.readAttemptCleanup(manifest.jobId, manifest.attemptId);
   }
 
   async getVerification(attemptId: string): Promise<VerificationRecord> {
@@ -342,6 +357,11 @@ export class Conductor {
     }
     const manifest = await this.getAttempt(attemptId);
     const artifactPath = manifest.artifacts[name];
+    if (!artifactPath) {
+      throw new Error(
+        `Artifact ${name} is unavailable for attempt ${attemptId}`,
+      );
+    }
     const size = (await stat(artifactPath)).size;
     const bytes = Buffer.alloc(Math.min(size, maxBytes));
     const handle = await open(artifactPath, "r");
@@ -521,21 +541,93 @@ export class Conductor {
       });
       return { disposition: "safe-to-retry", manifest };
     }
-    if (!manifest.guardian) {
+    let cleanup: AttemptCleanupRecord;
+    try {
+      cleanup = await this.getAttemptCleanup(attemptId);
+    } catch {
       return { disposition: "unknown", manifest };
     }
-    if (isProcessAlive(manifest.guardian.guardianPid)) {
+    let processRequirements = cleanup.requirements.filter(
+      (requirement) => requirement.subject.kind === "process-tree",
+    );
+    if (processRequirements.length === 0 && manifest.guardian) {
+      await this.registerProcessCleanup(
+        manifest,
+        "legacy-interrupted-process",
+        manifest.guardian,
+      );
+      cleanup = await this.getAttemptCleanup(attemptId);
+      processRequirements = cleanup.requirements.filter(
+        (requirement) => requirement.subject.kind === "process-tree",
+      );
+    }
+    if (processRequirements.length === 0) {
+      return { disposition: "unknown", manifest };
+    }
+    const unresolved = processRequirements.filter(
+      (requirement) =>
+        latestCleanupEvidence(cleanup, requirement.subject)?.status !==
+        "proven",
+    );
+    if (
+      unresolved.some(
+        (requirement) =>
+          requirement.guardian &&
+          isProcessAlive(requirement.guardian.guardianPid),
+      )
+    ) {
       await delay(guardianExitGraceMs);
       manifest = await this.getAttempt(attemptId);
-      if (manifest.guardian && isProcessAlive(manifest.guardian.guardianPid)) {
+      if (
+        unresolved.some(
+          (requirement) =>
+            requirement.guardian &&
+            isProcessAlive(requirement.guardian.guardianPid),
+        )
+      ) {
         return { disposition: "still-running", manifest };
       }
     }
-    const cleanup = await this.cleanupExternalResources(manifest);
-    manifest = cleanup.manifest;
-    if (!cleanup.safe) {
+    for (const requirement of unresolved) {
+      const guardian = requirement.guardian;
+      const kernelClosure =
+        guardian?.schema === "conductor.process-guardian/v2" &&
+        guardian.containment.kind === "windows-job" &&
+        guardian.containment.kernelEnforced &&
+        guardian.containment.killOnOwnerClose &&
+        !isProcessAlive(guardian.guardianPid);
+      await this.appendCleanupEvidence(manifest, {
+        subject: requirement.subject,
+        status: kernelClosure ? "proven" : "unknown",
+        method: kernelClosure ? "windows-job-owner-exit" : "legacy-unverified",
+        detail: kernelClosure
+          ? "Verified Windows Job owner is absent; kill-on-close enforces descendant termination"
+          : "Guardian disappearance does not prove descendant absence on this containment record",
+        termination: {
+          schema: "conductor.process-termination/v1",
+          status: kernelClosure ? "proven" : "unknown",
+          method: kernelClosure
+            ? "windows-job-owner-exit"
+            : "guardian-exit-unverified",
+          observedAt: new Date().toISOString(),
+        },
+      });
+    }
+    cleanup = await this.getAttemptCleanup(attemptId);
+    if (
+      cleanup.requirements
+        .filter((requirement) => requirement.subject.kind === "process-tree")
+        .some(
+          (requirement) =>
+            latestCleanupEvidence(cleanup, requirement.subject)?.status !==
+            "proven",
+        )
+    ) {
       return { disposition: "unknown", manifest };
     }
+    const externalCleanup = await this.cleanupExternalResources(manifest);
+    manifest = externalCleanup.manifest;
+    if (!externalCleanup.safe) return { disposition: "unknown", manifest };
     manifest = await this.update(manifest, {
       status: "failed",
       finishedAt: new Date().toISOString(),
@@ -546,6 +638,18 @@ export class Conductor {
           "Recorded process guardian is no longer alive; its ownership pipe closed before retry",
       },
     });
+    const contract = await this.store.readJob(manifest.jobId);
+    if (manifest.workspace && !contract.execution.retainWorkspace) {
+      try {
+        await this.removeAttemptWorkspace(manifest.attemptId);
+      } catch {
+        return { disposition: "unknown", manifest };
+      }
+    }
+    cleanup = await this.getAttemptCleanup(attemptId);
+    if (!["not-required", "proven"].includes(cleanup.status)) {
+      return { disposition: "unknown", manifest };
+    }
     return { disposition: "safe-to-retry", manifest };
   }
 
@@ -564,10 +668,19 @@ export class Conductor {
         `Attempt ${attemptId} still owns an external resource; retry or workspace removal is prohibited`,
       );
     }
+    const evidence = await this.getAttemptCleanup(attemptId);
+    if (!["not-required", "proven"].includes(evidence.status)) {
+      throw new Error(
+        `Attempt ${attemptId} cleanup is ${evidence.status}; retry or workspace removal is prohibited`,
+      );
+    }
     return cleanup.manifest;
   }
 
-  async removeAttemptWorkspace(attemptId: string): Promise<AttemptManifest> {
+  async removeAttemptWorkspace(attemptId: string): Promise<{
+    manifest: AttemptManifest;
+    cleanup: AttemptCleanupRecord;
+  }> {
     let manifest = await this.getAttempt(attemptId);
     if (
       ["reserved", "claimed", "preparing", "running", "verifying"].includes(
@@ -578,18 +691,54 @@ export class Conductor {
         `Cannot remove workspace for active attempt ${attemptId}`,
       );
     }
-    manifest = await this.releaseAttemptExternalResources(attemptId);
-    if (!manifest.workspace || !manifest.workspace.retained) return manifest;
+    const externalCleanup = await this.cleanupExternalResources(manifest);
+    manifest = externalCleanup.manifest;
+    if (!externalCleanup.safe) {
+      throw new Error(
+        `Attempt ${attemptId} still owns an external resource; workspace removal is prohibited`,
+      );
+    }
+    if (!manifest.workspace || !manifest.workspace.retained) {
+      return { manifest, cleanup: await this.getAttemptCleanup(attemptId) };
+    }
+
+    const priorCleanup = await this.getAttemptCleanup(attemptId);
+    if (
+      latestCleanupEvidence(priorCleanup, {
+        kind: "workspace",
+        id: "worktree",
+      })?.status === "proven"
+    ) {
+      return { manifest, cleanup: priorCleanup };
+    }
+    await this.registerCleanupRequirement(manifest, {
+      kind: "workspace",
+      id: "worktree",
+    });
 
     const contract = await this.store.readJob(manifest.jobId);
-    await this.workspaces.remove({
-      path: manifest.workspace.path,
-      repositoryRoot: contract.repository.root,
-      baseRevision: manifest.workspace.baseRevision,
-    });
-    return this.update(manifest, {
-      workspace: { ...manifest.workspace, retained: false },
-    });
+    try {
+      await this.workspaces.remove({
+        path: manifest.workspace.path,
+        repositoryRoot: contract.repository.root,
+        baseRevision: manifest.workspace.baseRevision,
+      });
+      const cleanup = await this.appendCleanupEvidence(manifest, {
+        subject: { kind: "workspace", id: "worktree" },
+        status: "proven",
+        method: "workspace-remove",
+        detail: "Recorded attempt worktree removed by owner request",
+      });
+      return { manifest, cleanup };
+    } catch (error) {
+      await this.appendCleanupEvidence(manifest, {
+        subject: { kind: "workspace", id: "worktree" },
+        status: "failed",
+        method: "workspace-remove",
+        detail: errorMessage(error),
+      });
+      throw error;
+    }
   }
 
   private launchAttempt(
@@ -643,6 +792,12 @@ export class Conductor {
         startedAt: new Date().toISOString(),
         verificationStatus: "running",
       });
+      if (!contract.execution.retainWorkspace) {
+        await this.registerCleanupRequirement(manifest, {
+          kind: "workspace",
+          id: "worktree",
+        });
+      }
       await this.writeVerification(manifest, verification);
 
       if (manifest.lineage) {
@@ -697,14 +852,23 @@ export class Conductor {
           signal: abortController.signal,
           executionBoundary: contract.execution.boundary,
           attemptId: manifest.attemptId,
-          onGuardianReady: async (identity) => {
+          onGuardianReady: async (operationId, identity) => {
+            await this.registerProcessCleanup(manifest, operationId, identity);
             manifest = await this.update(manifest, { guardian: identity });
+          },
+          onProcessResult: async (operationId, result) => {
+            await this.recordProcessCleanup(manifest, operationId, result);
+            assertProcessCleanupProven(operationId, result);
           },
           onExternalResource: async (resource) => {
             manifest = await this.registerExternalResource(manifest, resource);
           },
-          onExternalResourceReleased: async (resourceId) => {
-            manifest = await this.releaseExternalResource(manifest, resourceId);
+          onExternalResourceReleased: async (resourceId, cleanup) => {
+            manifest = await this.releaseExternalResource(
+              manifest,
+              resourceId,
+              cleanup,
+            );
           },
         });
         const repositoryClean =
@@ -773,6 +937,7 @@ export class Conductor {
         timeoutMs: contract.execution.timeoutMs,
         signal: abortController.signal,
         onGuardianReady: async (identity) => {
+          await this.registerProcessCleanup(manifest, "worker", identity);
           manifest = await this.update(manifest, { guardian: identity });
         },
         onSpawn: async (workerPid) => {
@@ -782,6 +947,8 @@ export class Conductor {
           });
         },
       });
+      await this.recordProcessCleanup(manifest, "worker", processResult);
+      assertProcessCleanupProven("worker", processResult);
       let proposal: ProposalCapture;
       try {
         proposal = await captureProposal(workspace, manifest);
@@ -890,8 +1057,17 @@ export class Conductor {
             signal: abortController.signal,
             executionBoundary: contract.execution.boundary,
             attemptId: manifest.attemptId,
-            onGuardianReady: async (identity) => {
+            onGuardianReady: async (operationId, identity) => {
+              await this.registerProcessCleanup(
+                manifest,
+                operationId,
+                identity,
+              );
               manifest = await this.update(manifest, { guardian: identity });
+            },
+            onProcessResult: async (operationId, result) => {
+              await this.recordProcessCleanup(manifest, operationId, result);
+              assertProcessCleanupProven(operationId, result);
             },
             onExternalResource: async (resource) => {
               manifest = await this.registerExternalResource(
@@ -899,10 +1075,11 @@ export class Conductor {
                 resource,
               );
             },
-            onExternalResourceReleased: async (resourceId) => {
+            onExternalResourceReleased: async (resourceId, cleanup) => {
               manifest = await this.releaseExternalResource(
                 manifest,
                 resourceId,
+                cleanup,
               );
             },
           });
@@ -976,22 +1153,19 @@ export class Conductor {
             );
           }
           await this.workspaces.remove(workspace);
-          manifest = await this.update(manifest, {
-            workspace: { ...manifest.workspace!, retained: false },
+          await this.appendCleanupEvidence(manifest, {
+            subject: { kind: "workspace", id: "worktree" },
+            status: "proven",
+            method: "workspace-remove",
+            detail: "Recorded attempt worktree removed",
           });
         } catch (error) {
           const cleanupError = `Workspace cleanup failed: ${errorMessage(error)}`;
-          manifest = await this.update(manifest, {
-            cleanupError,
-            ...(manifest.failure
-              ? {}
-              : {
-                  status: "failed" as const,
-                  failure: {
-                    kind: "orchestrator-error" as const,
-                    message: cleanupError,
-                  },
-                }),
+          await this.appendCleanupEvidence(manifest, {
+            subject: { kind: "workspace", id: "worktree" },
+            status: "failed",
+            method: "workspace-remove",
+            detail: cleanupError,
           });
         }
       }
@@ -1015,6 +1189,10 @@ export class Conductor {
     manifest: AttemptManifest,
     resource: ExternalResource,
   ): Promise<AttemptManifest> {
+    await this.registerCleanupRequirement(manifest, {
+      kind: "external-resource",
+      id: resource.resourceId,
+    });
     const existing = manifest.externalResources.filter(
       (entry) => entry.resourceId !== resource.resourceId,
     );
@@ -1026,7 +1204,16 @@ export class Conductor {
   private async releaseExternalResource(
     manifest: AttemptManifest,
     resourceId: string,
+    cleanup: ProcessExecutionResult,
   ): Promise<AttemptManifest> {
+    await this.appendCleanupEvidence(manifest, {
+      subject: { kind: "external-resource", id: resourceId },
+      status: cleanup.termination.status,
+      method: "external-resource-command",
+      detail: `External resource cleanup exited ${cleanup.exitCode}`,
+      termination: cleanup.termination,
+    });
+    if (isAttemptTerminal(manifest.status)) return manifest;
     return this.update(manifest, {
       externalResources: manifest.externalResources.map((entry) =>
         entry.resourceId === resourceId
@@ -1040,12 +1227,86 @@ export class Conductor {
     });
   }
 
+  private async registerCleanupRequirement(
+    manifest: AttemptManifest,
+    subject: CleanupSubject,
+    guardian?: CleanupRequirement["guardian"],
+  ): Promise<AttemptCleanupRecord> {
+    return this.store.registerAttemptCleanupRequirement(
+      manifest.jobId,
+      manifest.attemptId,
+      {
+        subject,
+        deadlineMs: subject.kind === "process-tree" ? 5_000 : 30_000,
+        guardian,
+      },
+    );
+  }
+
+  private async registerProcessCleanup(
+    manifest: AttemptManifest,
+    operationId: string,
+    guardian: NonNullable<CleanupRequirement["guardian"]>,
+  ): Promise<void> {
+    await this.registerCleanupRequirement(
+      manifest,
+      { kind: "process-tree", id: operationId },
+      guardian,
+    );
+  }
+
+  private async recordProcessCleanup(
+    manifest: AttemptManifest,
+    operationId: string,
+    result: ProcessResult,
+  ): Promise<void> {
+    await this.appendCleanupEvidence(manifest, {
+      subject: { kind: "process-tree", id: operationId },
+      status: result.termination.status,
+      method: "process-runner",
+      detail:
+        result.termination.detail ??
+        `Process cleanup reported ${result.termination.status}`,
+      termination: result.termination,
+    });
+  }
+
+  private async appendCleanupEvidence(
+    manifest: AttemptManifest,
+    input: Omit<CleanupEvidence, "schema" | "evidenceId" | "observedAt">,
+  ): Promise<AttemptCleanupRecord> {
+    return this.store.appendAttemptCleanupEvidence(
+      manifest.jobId,
+      manifest.attemptId,
+      {
+        schema: "conductor.cleanup-evidence/v1",
+        evidenceId: randomUUID(),
+        observedAt: new Date().toISOString(),
+        ...input,
+        detail: input.detail?.slice(0, 4_000),
+      },
+    );
+  }
+
   private async cleanupExternalResources(
     initialManifest: AttemptManifest,
   ): Promise<{ manifest: AttemptManifest; safe: boolean }> {
     let manifest = initialManifest;
     for (const resource of manifest.externalResources) {
       if (resource.status !== "active") continue;
+      const existingCleanup = await this.getAttemptCleanup(manifest.attemptId);
+      if (
+        latestCleanupEvidence(existingCleanup, {
+          kind: "external-resource",
+          id: resource.resourceId,
+        })?.status === "proven"
+      ) {
+        continue;
+      }
+      await this.registerCleanupRequirement(manifest, {
+        kind: "external-resource",
+        id: resource.resourceId,
+      });
       const prefix = path.join(
         path.dirname(manifest.artifacts.manifest),
         `recovery-${resource.resourceId}`,
@@ -1060,18 +1321,50 @@ export class Conductor {
           {
             stdoutPath: `${prefix}.stdout.log`,
             stderrPath: `${prefix}.stderr.log`,
-            timeoutMs: 30_000,
+            timeoutMs: 24_000,
+            onGuardianReady: (identity) =>
+              this.registerProcessCleanup(
+                manifest,
+                `external-resource-cleanup:${resource.resourceId}`,
+                identity,
+              ),
           },
         );
+        await this.recordProcessCleanup(
+          manifest,
+          `external-resource-cleanup:${resource.resourceId}`,
+          result,
+        );
         const stderr = await readFile(`${prefix}.stderr.log`, "utf8");
-        if (result.exitCode !== 0 && !/No such container/i.test(stderr)) {
+        if (
+          result.termination.status !== "proven" ||
+          (result.exitCode !== 0 && !/No such container/i.test(stderr))
+        ) {
+          await this.appendCleanupEvidence(manifest, {
+            subject: {
+              kind: "external-resource",
+              id: resource.resourceId,
+            },
+            status:
+              result.termination.status === "proven" ? "failed" : "unknown",
+            method: "external-resource-command",
+            detail: `External resource cleanup exited ${result.exitCode}`,
+            termination: result.termination,
+          });
           return { manifest, safe: false };
         }
         manifest = await this.releaseExternalResource(
           manifest,
           resource.resourceId,
+          result,
         );
-      } catch {
+      } catch (error) {
+        await this.appendCleanupEvidence(manifest, {
+          subject: { kind: "external-resource", id: resource.resourceId },
+          status: "failed",
+          method: "external-resource-command",
+          detail: errorMessage(error),
+        });
         return { manifest, safe: false };
       }
     }
@@ -1084,29 +1377,48 @@ export class Conductor {
   ): Promise<AttemptManifest> {
     return this.store.transitionAttempt(manifest, patch);
   }
+
+  private async summarize(
+    manifest: AttemptManifest,
+    idempotentReplay: boolean,
+  ): Promise<RunJobResult> {
+    let cleanup: AttemptCleanupRecord | undefined;
+    try {
+      cleanup = await this.store.readAttemptCleanup(
+        manifest.jobId,
+        manifest.attemptId,
+      );
+    } catch {
+      // Legacy or damaged cleanup evidence is surfaced as unknown. The
+      // reconciliation report retains the read failure details.
+    }
+    const workspaceRemoved =
+      cleanup &&
+      latestCleanupEvidence(cleanup, {
+        kind: "workspace",
+        id: "worktree",
+      })?.status === "proven";
+    return {
+      jobId: manifest.jobId,
+      attemptId: manifest.attemptId,
+      status: manifest.status,
+      idempotentReplay,
+      workspacePath: manifest.workspace?.path,
+      workspaceRetained: workspaceRemoved
+        ? false
+        : manifest.workspace?.retained,
+      artifacts: manifest.artifacts,
+      failure: manifest.failure,
+      verificationStatus: manifest.verificationStatus,
+      cleanupStatus: cleanup?.status ?? "unknown",
+    };
+  }
 }
 
 class TerminalAttempt extends Error {
   constructor(readonly manifest: AttemptManifest) {
     super(`Attempt reached terminal state: ${manifest.attemptId}`);
   }
-}
-
-function summarize(
-  manifest: AttemptManifest,
-  idempotentReplay: boolean,
-): RunJobResult {
-  return {
-    jobId: manifest.jobId,
-    attemptId: manifest.attemptId,
-    status: manifest.status,
-    idempotentReplay,
-    workspacePath: manifest.workspace?.path,
-    workspaceRetained: manifest.workspace?.retained,
-    artifacts: manifest.artifacts,
-    failure: manifest.failure,
-    verificationStatus: manifest.verificationStatus,
-  };
 }
 
 interface ProposalCapture {
@@ -1172,14 +1484,25 @@ async function runCommandSequence(input: {
   defaultTimeoutMs: number;
   policy: ExecutionPolicy;
   signal: AbortSignal;
-  onGuardianReady?: (identity: ProcessGuardianIdentity) => void | Promise<void>;
+  onGuardianReady?: (
+    operationId: string,
+    identity: ProcessGuardianIdentity,
+  ) => void | Promise<void>;
+  onProcessResult?: (
+    operationId: string,
+    result: ProcessResult,
+  ) => void | Promise<void>;
   onExternalResource?: (resource: ExternalResource) => void | Promise<void>;
-  onExternalResourceReleased?: (resourceId: string) => void | Promise<void>;
+  onExternalResourceReleased?: (
+    resourceId: string,
+    cleanup: ProcessExecutionResult,
+  ) => void | Promise<void>;
   executionBoundary: JobContract["execution"]["boundary"];
   attemptId: string;
 }): Promise<CommandEvidence[]> {
   const evidence: CommandEvidence[] = [];
   for (const [index, command] of input.commands.entries()) {
+    const operationId = `${input.phase}-${String(index + 1).padStart(2, "0")}`;
     const result = await executeCommand({
       command,
       phase: input.phase,
@@ -1189,7 +1512,10 @@ async function runCommandSequence(input: {
       defaultTimeoutMs: input.defaultTimeoutMs,
       policy: input.policy,
       signal: input.signal,
-      onGuardianReady: input.onGuardianReady,
+      onGuardianReady: (identity) =>
+        input.onGuardianReady?.(operationId, identity),
+      onProcessResult: (processResult) =>
+        input.onProcessResult?.(operationId, processResult),
       executionBoundary: input.executionBoundary,
       attemptId: input.attemptId,
       onExternalResource: input.onExternalResource,
@@ -1265,6 +1591,17 @@ function samePath(left: string, right: string): boolean {
 
 function isAttemptTerminal(status: AttemptManifest["status"]): boolean {
   return ["completed", "failed", "needs-input", "cancelled"].includes(status);
+}
+
+function assertProcessCleanupProven(
+  operationId: string,
+  result: ProcessResult,
+): void {
+  if (result.termination.status !== "proven") {
+    throw new Error(
+      `Process cleanup for ${operationId} is ${result.termination.status}; continuing could race a surviving descendant`,
+    );
+  }
 }
 
 function delay(milliseconds: number): Promise<void> {

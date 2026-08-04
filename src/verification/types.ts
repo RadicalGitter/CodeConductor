@@ -1,6 +1,7 @@
 import { z } from "zod/v4";
 
 import { commandSpecSchema } from "../contracts/job.js";
+import { processResultSchema } from "../contracts/attempt.js";
 
 export const commandEvidenceSchema = z.object({
   phase: z.enum(["setup", "acceptance"]),
@@ -29,16 +30,7 @@ export const commandEvidenceSchema = z.object({
     "cancelled",
     "policy-denied",
   ]),
-  process: z
-    .object({
-      pid: z.number().int().positive().optional(),
-      exitCode: z.number().int().nullable(),
-      signal: z.string().nullable(),
-      timedOut: z.boolean(),
-      cancelled: z.boolean(),
-      durationMs: z.number().int().nonnegative(),
-    })
-    .optional(),
+  process: processResultSchema.optional(),
   stdout: z.string().min(1).optional(),
   stderr: z.string().min(1).optional(),
   error: z.string().min(1).optional(),

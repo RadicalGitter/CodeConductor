@@ -198,7 +198,7 @@ export function buildSandboxedCommand(input: {
         cwd: input.cleanupCwd,
         env: {},
         allowMissingMessage: "No such container",
-        timeoutMs: 30_000,
+        timeoutMs: 24_000,
       },
     },
     evidence: {

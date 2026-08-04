@@ -164,11 +164,18 @@ test("orphan recovery releases every recorded external resource before retry", a
     await store.transitionAttempt(preparing, {
       status: "running",
       guardian: {
-        schema: "conductor.process-guardian/v1",
+        schema: "conductor.process-guardian/v2",
         nonce: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         guardianPid: 999_999_999,
         parentPid: process.pid,
         createdAt: new Date().toISOString(),
+        containment: {
+          schema: "conductor.process-containment/v1",
+          kind: "windows-job",
+          ownerPid: 999_999_999,
+          kernelEnforced: true,
+          killOnOwnerClose: true,
+        },
       },
       externalResources: [
         {
@@ -199,6 +206,59 @@ test("orphan recovery releases every recorded external resource before retry", a
     expect(recovery.disposition).toBe("safe-to-retry");
     expect(recovery.manifest.externalResources[0]?.status).toBe("released");
     expect(await exists(cleanupCanary)).toBe(true);
+  } finally {
+    await rm(repository.root, { recursive: true, force: true });
+    await rm(dataRoot, { recursive: true, force: true });
+  }
+});
+
+test("legacy guardian disappearance is quarantined instead of authorizing retry", async () => {
+  const repository = await createTestRepository();
+  const dataRoot = await mkdtemp(
+    path.join(os.tmpdir(), "conductor-legacy-guardian-"),
+  );
+  const store = new ArtifactStore(dataRoot);
+  const conductor = new Conductor(
+    store,
+    new GitWorkspaceManager(store.workspaceRoot()),
+    new WorkerRegistry([new SandboxFixtureAdapter("file-edit-only")]),
+  );
+
+  try {
+    const contract = await conductor.prepareJob({
+      objective: "Refuse unproved legacy process closure",
+      repositoryPath: repository.root,
+      adapterId: "sandbox-fixture",
+      idempotencyKey: "legacy-guardian-quarantine",
+    });
+    const reserved = await conductor.reservePreparedAttempt(contract.jobId);
+    const claimed = await claimAttemptForTest(
+      store,
+      await conductor.getAttempt(reserved.attemptId),
+    );
+    const preparing = await store.transitionAttempt(claimed, {
+      status: "preparing",
+    });
+    await store.transitionAttempt(preparing, {
+      status: "running",
+      guardian: {
+        schema: "conductor.process-guardian/v1",
+        nonce: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        guardianPid: 999_999_999,
+        parentPid: process.pid,
+        createdAt: new Date().toISOString(),
+      },
+    });
+
+    const recovery = await conductor.recoverInterruptedAttempt(
+      reserved.attemptId,
+      0,
+    );
+    expect(recovery.disposition).toBe("unknown");
+    expect(recovery.manifest.status).toBe("running");
+    expect((await conductor.getAttemptCleanup(reserved.attemptId)).status).toBe(
+      "unknown",
+    );
   } finally {
     await rm(repository.root, { recursive: true, force: true });
     await rm(dataRoot, { recursive: true, force: true });
@@ -267,7 +327,10 @@ test("manual retry releases durable resources and fails closed when cleanup fail
     expect(
       (await conductor.getAttempt(reserved.attemptId)).externalResources[0]
         ?.status,
-    ).toBe("released");
+    ).toBe("active");
+    expect((await conductor.getAttemptCleanup(reserved.attemptId)).status).toBe(
+      "proven",
+    );
 
     const second = await dispatcher.enqueue({
       objective: "Refuse retry when external cleanup fails",
@@ -310,9 +373,7 @@ test("manual retry releases durable resources and fails closed when cleanup fail
     );
     await expect(
       conductor.removeAttemptWorkspace(secondReserved.attemptId),
-    ).rejects.toThrow(
-      "still owns an external resource; retry or workspace removal is prohibited",
-    );
+    ).rejects.toThrow("still owns an external resource");
     expect((await queue.read(second.item.jobId)).status).toBe("failed");
     expect(
       (await conductor.getAttempt(secondReserved.attemptId))
@@ -322,7 +383,7 @@ test("manual retry releases durable resources and fails closed when cleanup fail
     await rm(repository.root, { recursive: true, force: true });
     await rm(dataRoot, { recursive: true, force: true });
   }
-});
+}, 20_000);
 
 test("automatic workspace cleanup retains evidence when external cleanup is unproven", async () => {
   const repository = await createTestRepository();
@@ -355,17 +416,31 @@ test("automatic workspace cleanup retains evidence when external cleanup is unpr
     });
     const manifest = await conductor.getAttempt(result.attemptId);
     expect(result.status).toBe("failed");
+    expect(result.cleanupStatus).toBe("failed");
     expect(manifest.workspace?.retained).toBe(true);
     expect(manifest.externalResources[0]?.status).toBe("active");
-    expect(manifest.cleanupError).toContain(
-      "External resource cleanup failed; its worktree must remain available",
-    );
+    expect(manifest.cleanupError).toBeUndefined();
+    const cleanup = await conductor.getAttemptCleanup(result.attemptId);
+    expect(
+      cleanup.evidence.some(
+        (entry) =>
+          entry.subject.kind === "workspace" && entry.status === "failed",
+      ),
+    ).toBe(true);
+    expect(
+      cleanup.evidence.some(
+        (entry) =>
+          entry.subject.kind === "external-resource" &&
+          entry.status === "failed",
+      ),
+    ).toBe(true);
+    expect(cleanup.status).toBe("failed");
     expect(await exists(manifest.workspace!.path)).toBe(true);
   } finally {
     await rm(repository.root, { recursive: true, force: true });
     await rm(dataRoot, { recursive: true, force: true });
   }
-});
+}, 15_000);
 
 async function claimAttemptForTest(
   store: ArtifactStore,

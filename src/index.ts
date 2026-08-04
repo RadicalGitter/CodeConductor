@@ -1,6 +1,7 @@
 export const CONDUCTOR_VERSION = "0.1.0" as const;
 
 export * from "./contracts/attempt.js";
+export * from "./contracts/cleanup.js";
 export * from "./contracts/job.js";
 export * from "./contracts/queue.js";
 export * from "./contracts/reconcile.js";

@@ -29,12 +29,16 @@ export const queueCompletionSchema = z.object({
   attemptId: z.string().min(1),
   attemptStatus: attemptStatusSchema,
   verificationStatus: z.enum(["not-run", "running", "eligible", "ineligible"]),
+  cleanupStatus: z
+    .enum(["not-required", "pending", "proven", "failed", "unknown"])
+    .optional(),
   finishedAt: z.string().datetime(),
   artifacts: z.object({
     manifest: z.string().min(1),
     proposalPatch: z.string().min(1),
     changedPaths: z.string().min(1),
     verification: z.string().min(1),
+    cleanup: z.string().min(1).optional(),
   }),
 });
 

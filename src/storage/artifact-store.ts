@@ -17,6 +17,17 @@ import {
   type AttemptStatus,
   type ProposalLineage,
 } from "../contracts/attempt.js";
+import {
+  attemptCleanupRecordSchema,
+  cleanupEvidenceSchema,
+  cleanupRequirementSchema,
+  createAttemptCleanupRecord,
+  deriveCleanupStatus,
+  sameCleanupSubject,
+  type AttemptCleanupRecord,
+  type CleanupEvidence,
+  type CleanupRequirement,
+} from "../contracts/cleanup.js";
 import { jobContractSchema, type JobContract } from "../contracts/job.js";
 import {
   commitTransition,
@@ -165,6 +176,141 @@ export class ArtifactStore {
     return updated;
   }
 
+  async readAttemptCleanup(
+    jobId: string,
+    attemptId: string,
+  ): Promise<AttemptCleanupRecord> {
+    const projection = attemptCleanupRecordSchema.parse(
+      await this.readJson(this.attemptCleanupPath(jobId, attemptId)),
+    );
+    const latest = await readLatestTransition({
+      recordKind: "attempt-cleanup",
+      recordId: attemptId,
+      transitionsRoot: this.attemptCleanupTransitionsRoot(jobId, attemptId),
+      snapshotName: "cleanup.json",
+      parse: (value) => attemptCleanupRecordSchema.parse(value),
+      revisionOf: (value) => value.revision,
+    });
+    if (!latest) return projection;
+    if (latest.revision < projection.revision) {
+      throw new Error(
+        `Attempt cleanup ${attemptId} projection revision ${projection.revision} is ahead of its transition journal ${latest.revision}`,
+      );
+    }
+    return latest;
+  }
+
+  async registerAttemptCleanupRequirement(
+    jobId: string,
+    attemptId: string,
+    input: Omit<CleanupRequirement, "schema" | "registeredAt"> & {
+      registeredAt?: string;
+    },
+  ): Promise<AttemptCleanupRecord> {
+    const requirement = cleanupRequirementSchema.parse({
+      schema: "conductor.cleanup-requirement/v1",
+      ...input,
+      registeredAt: input.registeredAt ?? new Date().toISOString(),
+    });
+    const current = await this.readAttemptCleanup(jobId, attemptId);
+    const existing = current.requirements.find((candidate) =>
+      sameCleanupSubject(candidate.subject, requirement.subject),
+    );
+    const requirements = existing
+      ? current.requirements.map((candidate) =>
+          sameCleanupSubject(candidate.subject, requirement.subject)
+            ? {
+                ...candidate,
+                deadlineMs: requirement.deadlineMs,
+                guardian: requirement.guardian ?? candidate.guardian,
+              }
+            : candidate,
+        )
+      : [...current.requirements, requirement];
+    if (JSON.stringify(requirements) === JSON.stringify(current.requirements)) {
+      return current;
+    }
+    return this.transitionAttemptCleanup(current, { requirements });
+  }
+
+  async appendAttemptCleanupEvidence(
+    jobId: string,
+    attemptId: string,
+    input: CleanupEvidence,
+  ): Promise<AttemptCleanupRecord> {
+    const evidence = cleanupEvidenceSchema.parse(input);
+    const current = await this.readAttemptCleanup(jobId, attemptId);
+    if (
+      !current.requirements.some((requirement) =>
+        sameCleanupSubject(requirement.subject, evidence.subject),
+      )
+    ) {
+      throw new Error(
+        `Cleanup evidence for unregistered subject ${evidence.subject.kind}:${evidence.subject.id}`,
+      );
+    }
+    if (
+      current.evidence.some(
+        (observation) => observation.evidenceId === evidence.evidenceId,
+      )
+    ) {
+      return current;
+    }
+    return this.transitionAttemptCleanup(current, {
+      evidence: [...current.evidence, evidence],
+    });
+  }
+
+  private async transitionAttemptCleanup(
+    expected: AttemptCleanupRecord,
+    patch: Partial<AttemptCleanupRecord>,
+  ): Promise<AttemptCleanupRecord> {
+    const current = await this.readAttemptCleanup(
+      expected.jobId,
+      expected.attemptId,
+    );
+    if (
+      current.revision !== expected.revision ||
+      JSON.stringify(current) !== JSON.stringify(expected)
+    ) {
+      throw new TransitionConflictError(
+        "attempt-cleanup",
+        expected.attemptId,
+        expected.revision,
+        current.revision,
+      );
+    }
+    const requirements = patch.requirements ?? current.requirements;
+    const evidence = patch.evidence ?? current.evidence;
+    const updated = attemptCleanupRecordSchema.parse({
+      ...current,
+      ...patch,
+      schema: "conductor.attempt-cleanup/v1",
+      attemptId: current.attemptId,
+      jobId: current.jobId,
+      revision: current.revision + 1,
+      updatedAt: new Date().toISOString(),
+      status: deriveCleanupStatus(requirements, evidence),
+      requirements,
+      evidence,
+    });
+    await commitTransition({
+      recordKind: "attempt-cleanup",
+      recordId: current.attemptId,
+      expectedRevision: current.revision,
+      value: updated,
+      transitionsRoot: this.attemptCleanupTransitionsRoot(
+        current.jobId,
+        current.attemptId,
+      ),
+      snapshotName: "cleanup.json",
+      projectionPath: this.attemptCleanupPath(current.jobId, current.attemptId),
+      writeJsonAtomic: (target, value) => this.writeJsonAtomic(target, value),
+      failpoint: this.options.transitionFailpoint,
+    });
+    return updated;
+  }
+
   async readAttempt(
     jobId: string,
     attemptId: string,
@@ -288,6 +434,17 @@ export class ArtifactStore {
     return path.join(this.attemptDirectory(jobId, attemptId), "transitions");
   }
 
+  attemptCleanupPath(jobId: string, attemptId: string): string {
+    return path.join(this.attemptDirectory(jobId, attemptId), "cleanup.json");
+  }
+
+  attemptCleanupTransitionsRoot(jobId: string, attemptId: string): string {
+    return path.join(
+      this.attemptDirectory(jobId, attemptId),
+      "cleanup-transitions",
+    );
+  }
+
   workspaceRoot(): string {
     return path.join(this.root, "workspaces");
   }
@@ -329,6 +486,7 @@ export class ArtifactStore {
         repositoryStatus: path.join(directory, "repository-status.txt"),
         changedPaths: path.join(directory, "changed-paths.json"),
         verification: path.join(directory, "verification.json"),
+        cleanup: path.join(directory, "cleanup.json"),
       },
       lineage,
       dispatchOperationId,
@@ -337,6 +495,10 @@ export class ArtifactStore {
       await this.writeJsonAtomic(
         path.join(stagingDirectory, "attempt.json"),
         manifest,
+      );
+      await this.writeJsonAtomic(
+        path.join(stagingDirectory, "cleanup.json"),
+        createAttemptCleanupRecord({ attemptId, jobId: contract.jobId }),
       );
       await rename(stagingDirectory, directory);
       return { manifest, directory, created: true };
@@ -358,10 +520,10 @@ const allowedAttemptTransitions: Record<AttemptStatus, AttemptStatus[]> = {
   preparing: ["preparing", "running", "needs-input", "failed", "cancelled"],
   running: ["running", "verifying", "failed", "cancelled"],
   verifying: ["verifying", "completed", "failed", "cancelled"],
-  completed: ["completed", "failed"],
-  failed: ["failed"],
-  "needs-input": ["needs-input"],
-  cancelled: ["cancelled"],
+  completed: [],
+  failed: [],
+  "needs-input": [],
+  cancelled: [],
 };
 
 function assertAttemptTransition(

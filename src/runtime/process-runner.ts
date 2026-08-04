@@ -46,6 +46,7 @@ export interface ProcessTerminationEvidence {
   method:
     | "not-started"
     | "windows-job-terminate-and-empty"
+    | "windows-job-owner-exit"
     | "posix-process-group-empty"
     | "guardian-exit-unverified";
   observedAt: string;
@@ -61,7 +62,7 @@ export interface ProcessRunOptions {
   onGuardianReady?: (identity: ProcessGuardianIdentity) => void | Promise<void>;
 }
 
-export interface ProcessResult {
+export interface ProcessExecutionResult {
   pid?: number;
   exitCode: number | null;
   signal: NodeJS.Signals | null;
@@ -70,6 +71,10 @@ export interface ProcessResult {
   durationMs: number;
   containment?: ProcessContainment;
   termination: ProcessTerminationEvidence;
+}
+
+export interface ProcessResult extends ProcessExecutionResult {
+  cleanup?: ProcessExecutionResult;
 }
 
 export async function runProcess(
@@ -207,7 +212,11 @@ export async function runProcess(
           }
         } else if (event.type === "tree-cleanup") {
           treeCleanup = terminationEvidence(
-            event.status === "proven" ? "proven" : "failed",
+            event.status === "proven"
+              ? "proven"
+              : event.status === "unknown"
+                ? "unknown"
+                : "failed",
             event.method === "windows-job-terminate-and-empty"
               ? "windows-job-terminate-and-empty"
               : event.method === "posix-process-group-empty"
@@ -329,15 +338,16 @@ export async function runProcess(
                   ? "Guardian exited without a complete process-tree cleanup event"
                   : "Process containment never became ready"),
             ));
-      if (invocation.cleanup) {
-        await runCleanupInvocation(invocation.cleanup);
-      }
+      const cleanup = invocation.cleanup
+        ? await runCleanupInvocation(invocation.cleanup)
+        : undefined;
       return {
         ...result,
         timedOut,
         cancelled,
         containment: guardianHost.containment(guardian.pid!),
         termination: finalTermination,
+        cleanup,
       };
     } finally {
       clearTimeout(timeout);
@@ -447,7 +457,7 @@ export function isProcessAlive(pid: number): boolean {
 
 async function runCleanupInvocation(
   invocation: NonNullable<ProcessInvocation["cleanup"]>,
-): Promise<void> {
+): Promise<ProcessExecutionResult> {
   const identity = randomUUID();
   const stdoutPath = path.join(
     invocation.cwd,
@@ -468,19 +478,24 @@ async function runCleanupInvocation(
       {
         stdoutPath,
         stderrPath,
-        timeoutMs: invocation.timeoutMs ?? 30_000,
+        timeoutMs: invocation.timeoutMs ?? 24_000,
       },
     );
     const stderr = await readFile(stderrPath, "utf8");
     if (result.timedOut) {
       throw new Error("External resource cleanup timed out");
     }
-    if (result.exitCode === 0) return;
+    if (result.termination.status !== "proven") {
+      throw new Error(
+        `External resource cleanup process termination is ${result.termination.status}`,
+      );
+    }
+    if (result.exitCode === 0) return result;
     if (
       invocation.allowMissingMessage &&
       stderr.includes(invocation.allowMissingMessage)
     ) {
-      return;
+      return result;
     }
     throw new Error(
       `External resource cleanup exited ${result.exitCode}: ${stderr.trim()}`,

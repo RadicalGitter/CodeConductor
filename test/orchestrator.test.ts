@@ -105,7 +105,8 @@ test("runs a durable proposal in an exact-revision worktree and replays idempote
     ).rejects.toBeInstanceOf(IdempotencyConflictError);
 
     const removed = await conductor.removeAttemptWorkspace(result.attemptId);
-    expect(removed.workspace?.retained).toBe(false);
+    expect(removed.manifest.workspace?.retained).toBe(true);
+    expect(removed.cleanup.status).toBe("proven");
     expect(await exists(result.workspacePath!)).toBe(false);
     retainedWorkspace = undefined;
   } finally {
@@ -291,6 +292,7 @@ class ClaimCountingConductor extends Conductor {
       idempotentReplay: false,
       artifacts: manifest.artifacts,
       verificationStatus: manifest.verificationStatus,
+      cleanupStatus: "not-required",
     };
   }
 }

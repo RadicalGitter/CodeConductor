@@ -300,6 +300,19 @@ export function createMcpServer(
   );
 
   server.registerTool(
+    "get_attempt_cleanup",
+    {
+      title: "Get attempt cleanup evidence",
+      description:
+        "Read the separate revisioned cleanup obligations and observations for one attempt, including whether retry and evidence removal are safe.",
+      inputSchema: { attemptId: z.string().min(1) },
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async ({ attemptId }) =>
+      toolResult(await conductor.getAttemptCleanup(attemptId)),
+  );
+
+  server.registerTool(
     "get_review_bundle",
     {
       title: "Get hash-bound review bundle",
@@ -332,6 +345,7 @@ export function createMcpServer(
           "repositoryStatus",
           "changedPaths",
           "verification",
+          "cleanup",
         ]),
         maxBytes: z.number().int().min(1).max(1_000_000).default(200_000),
       },
