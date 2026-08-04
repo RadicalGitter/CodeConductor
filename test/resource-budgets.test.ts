@@ -10,7 +10,10 @@ import {
   type OwnerResourceProfile,
   type ResourceLimits,
 } from "../src/contracts/resources.js";
-import { Conductor } from "../src/orchestrator/conductor.js";
+import {
+  Conductor,
+  type DiskFreeProbe,
+} from "../src/orchestrator/conductor.js";
 import { ArtifactStore } from "../src/storage/artifact-store.js";
 import type { WorkerAdapter } from "../src/workers/adapter.js";
 import { WorkerRegistry } from "../src/workers/adapter.js";
@@ -146,6 +149,37 @@ test("attempt reservation stops at the frozen per-job ceiling", async () => {
   }
 });
 
+test("disk pressure aborts an attempt at the monitored resource boundary", async () => {
+  const repository = await createTestRepository();
+  const dataRoot = await mkdtemp(
+    path.join(os.tmpdir(), "conductor-disk-pressure-"),
+  );
+  let samples = 0;
+  const conductor = createConductor(
+    dataRoot,
+    new InlineAdapter("setTimeout(() => process.exit(0), 5_000)"),
+    resourceProfile({ minimumFreeDiskBytes: 1_024 }),
+    async () => (++samples === 1 ? 10_000 : 0),
+  );
+  try {
+    const result = await runTestJob(conductor, {
+      objective: "Observe disk reserve loss after job preparation",
+      repositoryPath: repository.root,
+      adapterId: "inline",
+      idempotencyKey: "disk-pressure",
+      retainWorkspace: false,
+    });
+    expect(result.status).toBe("failed");
+    expect(result.failure?.kind).toBe("resource-limit");
+    expect(result.failure?.message).toContain(
+      "free disk fell below 1024 bytes",
+    );
+  } finally {
+    await rm(repository.root, { recursive: true, force: true });
+    await rm(dataRoot, { recursive: true, force: true });
+  }
+}, 20_000);
+
 class InlineAdapter implements WorkerAdapter {
   readonly description = {
     id: "inline",
@@ -173,6 +207,7 @@ function createConductor(
   dataRoot: string,
   adapter: WorkerAdapter,
   profile: OwnerResourceProfile,
+  diskFreeProbe?: DiskFreeProbe,
 ) {
   const store = new ArtifactStore(dataRoot);
   return new Conductor(
@@ -182,6 +217,7 @@ function createConductor(
     undefined,
     undefined,
     profile,
+    diskFreeProbe,
   );
 }
 

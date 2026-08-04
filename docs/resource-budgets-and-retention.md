@@ -117,7 +117,7 @@ containers a hostile-agent sandbox, attest a live inference server, or waive
 the separately recorded Docker engine/version canary. Those remain explicit
 environmental or later-phase gates.
 
-The closing repository gate passed 90 tests and 1,180 assertions. It includes
+The closing repository gate passed 91 tests and 1,183 assertions. It includes
 output flood, total deadline, oversized patch, attempt ceiling, stale GC,
 retention refusal, cleanup quarantine, frozen external cleanup, restart,
 process-tree, reconciliation, evidence-seal, source compiler, and queue tests.

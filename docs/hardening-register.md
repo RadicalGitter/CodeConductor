@@ -228,8 +228,8 @@ update on the exact implementing revision.
   proposal, attempt/retry ceilings, stale GC bindings, active/reviewable and
   cleanup-failed refusal, and frozen-profile cleanup reconstruction. See
   [resource budgets and retention](resource-budgets-and-retention.md).
-  The complete repository gate passed with 90 tests and 1,180 assertions in
-  256.2 seconds; its test phase took 249.85 seconds.
+  The complete repository gate passed with 91 tests and 1,183 assertions in
+  269.2 seconds; its test phase took 263.10 seconds.
 
 - Residual boundary: host worktree and aggregate artifact ceilings are sampled
   termination thresholds, not filesystem quotas, so a writer can overshoot

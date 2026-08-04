@@ -96,6 +96,8 @@ export class ProposalLineageError extends Error {
   }
 }
 
+export type DiskFreeProbe = (target: string) => Promise<number>;
+
 export class Conductor {
   private readonly activeAttempts = new Map<string, AbortController>();
   private readonly executions = new Map<string, Promise<AttemptManifest>>();
@@ -112,6 +114,7 @@ export class Conductor {
     readonly executionPolicy = new ExecutionPolicy(),
     readonly sandboxProfiles = new SandboxProfiles(),
     readonly resourceProfile: OwnerResourceProfile = DEFAULT_OWNER_RESOURCE_PROFILE,
+    readonly diskFreeProbe: DiskFreeProbe = availableDiskBytes,
   ) {}
 
   async prepareJob(input: unknown): Promise<JobContract> {
@@ -168,6 +171,7 @@ export class Conductor {
     await assertDiskHeadroom(
       this.store.root,
       candidate.resources.minimumFreeDiskBytes,
+      this.diskFreeProbe,
     );
     const reservation = await this.store.reserveJob(candidate);
     return reservation.contract;
@@ -925,6 +929,12 @@ export class Conductor {
 
     try {
       manifest = await this.update(manifest, { status: "preparing" });
+      if (!contract.execution.retainWorkspace) {
+        await this.registerCleanupRequirement(manifest, {
+          kind: "workspace",
+          id: "worktree",
+        });
+      }
       workspace = await this.workspaces.create({
         repositoryRoot: contract.repository.root,
         baseRevision: contract.repository.baseRevision,
@@ -939,6 +949,7 @@ export class Conductor {
         path.dirname(manifest.artifacts.manifest),
         contract,
         budgetController,
+        this.diskFreeProbe,
       );
       budgetMonitor.start();
       await budgetMonitor.assertWithinBudget();
@@ -951,12 +962,6 @@ export class Conductor {
         startedAt: new Date().toISOString(),
         verificationStatus: "running",
       });
-      if (!contract.execution.retainWorkspace) {
-        await this.registerCleanupRequirement(manifest, {
-          kind: "workspace",
-          id: "worktree",
-        });
-      }
       await this.writeVerification(manifest, verification);
 
       if (manifest.lineage) {
@@ -1701,6 +1706,7 @@ class ResourceBudgetMonitor {
     private readonly artifactDirectory: string,
     private readonly contract: JobContract,
     private readonly controller: AbortController,
+    private readonly diskFreeProbe: DiskFreeProbe,
   ) {}
 
   start(): void {
@@ -1723,7 +1729,7 @@ class ResourceBudgetMonitor {
     if (this.sampling || this.failure) return;
     this.sampling = true;
     try {
-      const [worktreeBytes, artifactBytes, filesystem] = await Promise.all([
+      const [worktreeBytes, artifactBytes, freeBytes] = await Promise.all([
         boundedDirectorySize(
           this.workspacePath,
           this.contract.resources.maxWorktreeBytes,
@@ -1732,7 +1738,7 @@ class ResourceBudgetMonitor {
           this.artifactDirectory,
           this.contract.resources.maxArtifactBytes,
         ),
-        statfs(this.workspacePath),
+        this.diskFreeProbe(this.workspacePath),
       ]);
       if (worktreeBytes > this.contract.resources.maxWorktreeBytes) {
         throw new ResourceLimitError(
@@ -1744,7 +1750,6 @@ class ResourceBudgetMonitor {
           `attempt artifacts exceeded ${this.contract.resources.maxArtifactBytes} bytes`,
         );
       }
-      const freeBytes = filesystem.bavail * filesystem.bsize;
       if (freeBytes < this.contract.resources.minimumFreeDiskBytes) {
         throw new ResourceLimitError(
           `free disk fell below ${this.contract.resources.minimumFreeDiskBytes} bytes`,
@@ -2064,7 +2069,17 @@ function delay(milliseconds: number): Promise<void> {
 async function assertDiskHeadroom(
   target: string,
   minimumFreeBytes: number,
+  probe: DiskFreeProbe,
 ): Promise<void> {
+  const freeBytes = await probe(target);
+  if (freeBytes < minimumFreeBytes) {
+    throw new Error(
+      `Insufficient free disk for a new attempt: ${freeBytes} bytes available, ${minimumFreeBytes} required by owner profile`,
+    );
+  }
+}
+
+async function availableDiskBytes(target: string): Promise<number> {
   let existing = target;
   try {
     await stat(existing);
@@ -2079,10 +2094,5 @@ async function assertDiskHeadroom(
     existing = path.dirname(existing);
   }
   const filesystem = await statfs(existing);
-  const freeBytes = filesystem.bavail * filesystem.bsize;
-  if (freeBytes < minimumFreeBytes) {
-    throw new Error(
-      `Insufficient free disk for a new attempt: ${freeBytes} bytes available, ${minimumFreeBytes} required by owner profile`,
-    );
-  }
+  return filesystem.bavail * filesystem.bsize;
 }
