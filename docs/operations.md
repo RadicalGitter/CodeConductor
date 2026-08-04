@@ -5,8 +5,9 @@
 > unattended gates. Attempt fencing and pre-launch dispatch recovery were
 > closed by `a84e8fc`, and malformed/missing lease recovery was closed by
 > `243b0ec`. Windows process-tree and cleanup closure were closed by `caae1c8`,
-> `726e1cf`, `3afab31`, and `77c2b54`. Complete queue/attempt convergence,
-> review-evidence integrity, and resource budgets remain open. Use attended
+> `726e1cf`, `3afab31`, and `77c2b54`. Schema-readable queue/attempt
+> convergence was closed by `1a3f908`. Review-evidence integrity and resource
+> budgets remain open. Use attended
 > trusted-worker trials only until the remaining hardening exits in
 > `vesserin-backend-generation-plan.md` pass.
 
@@ -104,10 +105,10 @@ bun run reconcile --dry-run
 ```
 
 It starts neither the dispatcher nor a worker. The report classifies the lease,
-lists queue/attempt relationship issues, and may include an
-`availableActions` proposal. A proposal is deliberately not executable
-approval. To authorize quarantine, copy the exact proposal into a separate
-JSON file and add an attributable approval:
+lists queue/attempt relationship issues, and may include one or more
+`availableActions` proposals. A proposal is deliberately not executable
+approval. Copy one exact proposal into a separate JSON file and add an
+attributable approval. This lease example shows the envelope:
 
 ```json
 {
@@ -134,13 +135,22 @@ Then apply only that file:
 bun run reconcile --apply .\approved-action.json
 ```
 
-The evidence token is rechecked immediately before mutation. The original lock
-directory and raw bytes move under `queue/lease-evidence`; nothing is silently
-deleted. A same-host dead valid owner is recovered automatically and preserved,
-regardless of wall-clock expiry. A live local owner is never stolen after
-suspend, and a remote-host lease always waits for owner judgment. Queue/attempt
-issues are diagnostic in this revision: do not hand-edit state or infer that
-the lease action repairs them.
+Do not hand-author a runtime proposal: copy its v2 object byte-for-byte from the
+dry-run and approve only that bounded effect. The evidence token is rechecked
+under an exclusive dispatcher lease immediately before mutation. Runtime
+actions can reset abandoned intent, quarantine an untrusted binding, restore
+an exact operation binding, synchronize a queue from terminal attempt and
+cleanup evidence, or run cleanup-gated orphan recovery. The latter may return
+`blocked`; approval cannot manufacture process or resource absence evidence.
+Approved runtime actions and results remain under
+`queue/reconciliation-actions/<operation-id>/` for replay and audit.
+
+For lease quarantine, the original lock directory and raw bytes move under
+`queue/lease-evidence`; nothing is silently deleted. A same-host dead valid
+owner is recovered automatically and preserved, regardless of wall-clock
+expiry. A live local owner is never stolen after suspend, and a remote-host
+lease always waits for owner judgment. Do not edit queue, attempt, cleanup, or
+lease state by hand.
 
 `submit_coding_job` is now a compatibility queue submission, not an alternate
 launcher. Its response wraps the current queue `item` and

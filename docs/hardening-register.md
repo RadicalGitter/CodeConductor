@@ -136,7 +136,7 @@ update on the exact implementing revision.
 ## HARD-006 — public recovery convergence
 
 - Severity: P0
-- State: partially implemented by `243b0ec`; open
+- State: closed for schema-readable single-host state by `1a3f908`
 - Failure: some terminal-queue/nonterminal-attempt and live-or-missing identity
   quarantines have no complete public recovery path.
 - Required change: versioned legal transition table and `reconcile --dry-run`
@@ -145,13 +145,24 @@ update on the exact implementing revision.
   durable terminal state or an actionable quarantine after restart.
 - Closure updates: CLI/MCP schemas, operations, and model-based transition
   tests.
-- Current boundary: `reconcile_runtime` and `bun run reconcile --dry-run`
-  publicly report unreadable stores, missing relationships, dispatch identity
-  mismatches, terminal/nonterminal disagreement, and unreferenced nonterminal
-  attempts. Live-owner reservation windows are warnings rather than false
-  corruption claims. The only mutating action is evidence-bound lease
-  quarantine; queue/attempt transitions still have no public repair action or
-  exhaustive convergence proof, so this item remains open.
+- Closure evidence: the public CLI and MCP expose five narrowly typed actions
+  for reset, quarantine, exact operation rebinding, immutable terminal
+  projection, and cleanup-gated orphan recovery. Approval intent is persisted
+  before mutation; exact retries replay one result, mutation-before-result
+  owner death reconstructs evidence, stale or manufactured actions are
+  refused, and live owners suppress competing action authority. The pure model
+  exercises all 80 queue/attempt status pairs under owned and unowned leases
+  (450 assertions), plus wrong-job, ambiguous-operation, corrupt-completion,
+  and missing-cleanup probes. The action suite exercises the standalone CLI,
+  MCP, actual process death, and negative authority cases. The complete gate
+  passed with 79 tests and 1,089 assertions. See
+  `reconciliation-state-matrix.md` for the preserved transient harness signal
+  and full boundary.
+- Residual boundary: malformed whole-record bytes remain a blocked diagnostic,
+  not permission to invent queue, attempt, or cleanup truth. Missing real-world
+  cleanup evidence returns a durable `blocked` result. These cases require the
+  named evidence to become readable or provable; they are not force-complete
+  escape hatches.
 
 ## HARD-007 — complete review evidence binding
 

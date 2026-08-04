@@ -58,7 +58,8 @@ Conductor
   command evidence.
 - Bounded artifact retrieval and proposal review packets.
 - A generation-fenced single-host dispatcher lease.
-- Evidence-preserving lease recovery plus dry-run runtime reconciliation.
+- Evidence-preserving lease recovery plus dry-run and owner-approved runtime
+  reconciliation.
 - Verified Windows Job Object ownership for every guarded command, including
   normal-exit descendant cleanup and owner-crash closure.
 - Independent durable cleanup requirements and observations for process trees,
@@ -72,9 +73,11 @@ claims and dispatch crash windows are now closed by repeatable race and abrupt-
 termination tests. Malformed and missing lease recovery is also closed by a
 typed, evidence-bound repair path. Process-tree and cleanup closure now pass on
 the supported PowerShell 7 Windows lane; legacy and POSIX-only containment fail
-closed. Public queue/attempt convergence, evidence sealing, and resource
-ceilings remain open before unattended use. The README, runtime contract, and
-operations guide deliberately do not hide that boundary.
+closed. Schema-readable queue/attempt convergence is also closed through typed,
+evidence-bound actions with crash-safe replay. Evidence sealing and resource
+ceilings remain open before unattended use. Malformed whole-record state stays
+blocked rather than being guessed. The README, runtime contract, and operations
+guide deliberately do not hide that boundary.
 
 ## What Conductor does not do
 
@@ -142,6 +145,7 @@ gates are in the
 - [Architecture and authority model](docs/architecture.md)
 - [Runtime contract](docs/runtime-contract.md)
 - [Operations and recovery](docs/operations.md)
+- [Runtime reconciliation state matrix](docs/reconciliation-state-matrix.md)
 - [Verification model](docs/verification.md)
 - [Source-authored contracts](docs/source-contracts.md)
 - [Behavior parity map](docs/parity-map.md)

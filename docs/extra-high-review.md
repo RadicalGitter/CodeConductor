@@ -7,10 +7,11 @@ widen them.
 > **Ultra follow-up, 2026-08-04:** the implementation review at `5bf3cf2`
 > reopened the first two outcomes below. Attempt fencing, pre-launch recovery,
 > lease repair, and the supported Windows process/cleanup boundary were later
-> closed by the revisions named in their sections. Public convergence, complete
-> review-evidence binding, and resource ceilings remain open; no individual
-> closure is a claim of unattended readiness. The remaining corrective gates
-> live in `vesserin-backend-generation-plan.md`.
+> closed by the revisions named in their sections. Schema-readable
+> queue/attempt convergence was closed by `1a3f908`. Complete review-evidence
+> binding and resource ceilings remain open; no individual closure is a claim
+> of unattended readiness. The remaining corrective gates live in
+> `vesserin-backend-generation-plan.md`.
 
 ## Orphan process recovery
 
@@ -34,13 +35,14 @@ Residual boundary: PowerShell 7 startup is currently paid per command and is a
 performance cost, not an authority shortcut. The POSIX process-group fallback
 cannot prove that a descendant did not create a new session, so its result is
 `unknown`; qualify cgroup-backed ownership before declaring a POSIX unattended
-lane. HARD-006 still governs public resolution of unrelated queue/attempt
-quarantines.
+lane. Queue/attempt repair is separately bounded by the HARD-006 closure at
+`1a3f908`; malformed whole-record state remains blocked.
 
 ## Lease stealing and filesystem semantics
 
-**Outcome: single-host lease repair resolved by `243b0ec`; broader recovery
-convergence remains open.** Lease records carry a monotonic generation, random
+**Outcome: single-host lease repair resolved by `243b0ec`; schema-readable
+runtime convergence later resolved by `1a3f908`.** Lease records carry a
+monotonic generation, random
 instance identity, hostname, process identity, and timestamps. Renewal and
 release require the exact generation. Release first atomically renames the
 exact lock, so a stale owner cannot delete its successor. A valid dead-owner
@@ -56,9 +58,10 @@ deleting it. A recoverable reconciliation mutex closes the repair-owner crash
 window. The malformed, missing, stale, suspend, clock, remote-host, concurrent
 owner, and crashed-reconciler tests pass on the implementing revision.
 
-Unmet exit: the public inspector diagnoses queue/attempt mismatch states, but
-most do not yet have typed mutation actions or exhaustive convergence evidence.
-That is HARD-006 rather than a remaining lease-repair defect.
+The later HARD-006 action protocol adds typed queue reset, quarantine, binding,
+terminal projection, and cleanup-gated orphan recovery. Its exhaustive status
+model and crash-replay evidence live in `reconciliation-state-matrix.md`; it
+does not change the lease authority described here.
 
 Residual boundary: SMB, mapped network drives, shared Tailscale filesystems,
 clock-independent distributed fencing, and multi-host dispatch remain

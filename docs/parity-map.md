@@ -101,9 +101,9 @@ closure without implying closure of the broader Phase 1 state machine.
 | Concurrent repair had no durable ownership protocol                       | staged local mutex, exact release, dead-owner recovery, and retained mutex evidence                          | two-recoverer, two-action, and dead-reconciler tests             |
 | No public inspection survived failed dispatcher startup                   | standalone `reconcile --dry-run`, plus MCP inspection and typed action surfaces                              | CLI subprocess and MCP contract tests                            |
 
-This closes HARD-005 only. The same dry-run reports queue/attempt relationship
-defects, but does not mutate them. Exhaustive state convergence and narrowly
-typed queue/attempt actions remain HARD-006.
+This closes HARD-005 only. At that revision, the same dry-run reported
+queue/attempt relationship defects but did not mutate them. The later
+HARD-006 extension below records their typed convergence.
 
 ## HARD-003/HARD-004 process and cleanup extension
 
@@ -121,5 +121,23 @@ typed queue/attempt actions remain HARD-006.
 | Git worktree removal could outlive its caller                            | resolved Git executable runs under the same Job boundary and one bounded workspace-cleanup deadline          | orchestration cleanup integration and process timeout characterization |
 
 This extension closes HARD-003 only for the named Windows profile and closes
-HARD-004. It does not close public queue/attempt repair, evidence sealing,
-resource quotas, or a POSIX unattended lane.
+HARD-004. It does not itself close public queue/attempt repair, evidence
+sealing, resource quotas, or a POSIX unattended lane.
+
+## HARD-006 runtime-reconciliation extension
+
+- Implementing revision: `1a3f908`
+- Target: converge every schema-readable queue/attempt relationship through a
+  bounded action or an exact missing-evidence explanation
+
+| Prior behavior                                              | Target behavior                                                                               | Verification                                        |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Queue/attempt findings were diagnostic only                 | return exact-token reset, quarantine, bind, terminal projection, or orphan-recovery proposals | all 80 queue/attempt status pairs and MCP/CLI tests |
+| Approval could race newer state                             | persist intent, acquire the dispatcher lease, and recheck full state evidence                 | stale and manufactured action refusal               |
+| A reconciler crash after mutation could obscure the result  | recognize only the typed postcondition and reconstruct one result record                      | abrupt child-process death after mutation           |
+| Repair risked widening normal transitions                   | use an action-specific reconciliation validator                                               | unauthorized postcondition rejection                |
+| Terminal or cleanup truth could be guessed from queue state | derive only from immutable attempt plus cleanup; return blocked when cleanup is unknown       | terminal synchronization and orphan recovery tests  |
+
+The detailed authority and failure matrix is
+[`reconciliation-state-matrix.md`](reconciliation-state-matrix.md). Malformed
+whole-record bytes remain blocked diagnostics rather than reconstructed truth.

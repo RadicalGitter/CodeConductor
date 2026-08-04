@@ -9,7 +9,7 @@
 | Tool                          | Effect                                                             |
 | ----------------------------- | ------------------------------------------------------------------ |
 | `reconcile_runtime`           | Dry-run lease and queue/attempt relationship inspection            |
-| `apply_reconciliation_action` | Applies one evidence-bound, owner-approved lease quarantine        |
+| `apply_reconciliation_action` | Applies one evidence-bound, owner-approved lease or runtime repair |
 | `list_worker_adapters`        | Lists configured adapter contracts                                 |
 | `submit_coding_job`           | Freezes a job and hands it to the owned dispatcher without waiting |
 | `enqueue_coding_job`          | Freezes a job and durably queues it with dependency metadata       |
@@ -67,6 +67,9 @@ may execute concurrently; each mutating attempt has its own worktree.
     lease-generation.json
     lease-evidence/<evidence-token>/
     lease-evidence/reconciliation-locks/<instance-id>/
+    reconciliation-actions/<operation-id>/
+      action.json
+      result.json
   source-runs/<run-id>/manifest.json
   source-watches/<watch-id>/watch.json
 ```
@@ -164,9 +167,21 @@ record is also retained.
 `reconcile_runtime` and `bun run reconcile --dry-run` do not mutate state. They
 also report unreadable stores and queue/attempt relationship mismatches. The
 standalone command deliberately constructs no dispatcher, so it remains usable
-when a damaged lease prevents MCP startup. Only lease quarantine has a public
-mutation action in this revision; queue/attempt mismatch repair remains part of
-HARD-006 and there is no force-complete command.
+when a damaged lease prevents MCP startup. Returned v2 proposals may reset an
+abandoned queue intent, quarantine an untrusted binding, restore one exact
+operation-to-attempt binding, project a terminal attempt plus cleanup into its
+queue record, or invoke cleanup-gated orphan recovery. There is no
+force-complete command.
+
+Runtime action approval is persisted before mutation under
+`queue/reconciliation-actions/<operation-id>/action.json`; its atomic result is
+stored beside it as `result.json`. The operation ID identifies the complete
+approved action. Exact replay returns the same result. Recovery after a crash
+between mutation and result recording accepts only the action-specific
+postcondition. Every other changed state is stale and refused. The executor
+holds the dispatcher lease during mutation, and ordinary queue transitions are
+not widened to acquire repair authority. See
+`reconciliation-state-matrix.md` for the transition and evidence matrix.
 
 Startup reconstructs a missing queue-to-attempt link from the operation ID,
 returns intent without an attempt safely to `queued`, cancels unlaunched orphan
@@ -184,10 +199,11 @@ cannot authorize retry. External-resource and workspace subjects must also be
 proven released. Git worktree removal and pruning run as bounded, Job-owned
 processes under one 30-second workspace-cleanup deadline.
 
-A queue item quarantined with an otherwise inconsistent nonterminal attempt
-still has no complete public mutation path. Therefore the process/cleanup
-closure does not establish the broader unattended contract; HARD-006 through
-HARD-008 remain governed by `docs/vesserin-backend-generation-plan.md`.
+Schema-readable queue/attempt disagreements now have public, evidence-bound
+convergence or an exact blocked cleanup requirement. Malformed whole-record
+bytes are still diagnostic only. Review-evidence sealing and bounded resource
+retention remain separate HARD-007 and HARD-008 gates; this state-machine
+closure is not a claim of broader unattended readiness.
 
 These semantics are local-host semantics. UNC data roots are rejected. Mapped
 network drives and distributed dispatch are outside this contract.

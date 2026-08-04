@@ -145,9 +145,12 @@ workspace removal remains `unknown` or `failed`, blocks retry and evidence
 removal, and appears in reconciliation. A missing verified v2 Windows Job owner
 proves closure through kill-on-close. Legacy guardians and the current POSIX
 process-group implementation do not provide equivalent kernel containment, so
-they fail closed and are not an unattended supported lane. Public repair of
-every remaining queue/attempt quarantine is still open under HARD-006; the
-process-ownership claim does not close that separate state-machine gate.
+they fail closed and are not an unattended supported lane. Schema-readable
+queue/attempt disagreements now converge through exact-token, owner-approved
+actions persisted before mutation. Queue repair changes routing only; terminal
+attempts stay immutable, and cleanup-gated orphan recovery remains blocked when
+process or resource absence is unproved. This closes HARD-006 without widening
+the process-ownership claim or creating a force-complete path.
 
 ## Extension boundary
 

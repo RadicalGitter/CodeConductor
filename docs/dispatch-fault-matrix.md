@@ -4,7 +4,8 @@
 - Scope: queue intent through pre-worker launch
 - Result: HARD-001 and HARD-002 closed at `a84e8fc`; HARD-005 lease repair
   closed separately at `243b0ec`; process/cleanup closure was later recorded in
-  the hardening register, while HARD-006 through HARD-008 remain open
+  the hardening register; HARD-006 was later closed by `1a3f908`, while
+  HARD-007 and HARD-008 remain open
 
 The test harness terminates a fresh dispatcher process at each named boundary,
 waits for its dead-owner lease to expire, and starts a new dispatcher over the
@@ -37,13 +38,13 @@ creation, or external-resource operations. Malformed lease records are covered
 by the later matrix below. Process and cleanup boundaries were closed for the
 supported Windows lane by the later HARD-003/HARD-004 extension in the
 [parity map](parity-map.md). Public recovery, evidence sealing, and resource
-bounds remain tracked by HARD-006 through HARD-008 in the
+bounds remain tracked by HARD-007 and HARD-008 in the
 [hardening register](hardening-register.md).
 
 ## Lease-repair fault matrix
 
 - Implementing revision: `243b0ec`
-- Result: HARD-005 closed; HARD-006 remains open
+- Result: HARD-005 closed; HARD-006 was closed later by `1a3f908`
 
 | Observed lease evidence                             | Authority                  | Disposition                                                                |
 | --------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------- |
@@ -59,5 +60,6 @@ bounds remain tracked by HARD-006 through HARD-008 in the
 
 The standalone dry-run starts no dispatcher, so damaged lease evidence cannot
 hide its own repair surface. The full 56-test gate passed on the implementing
-revision. Queue/attempt mismatches are now visible but are not included in this
-closure claim.
+revision. Queue/attempt mismatches were visible but not included in this lease
+closure claim; their later action/crash matrix is documented in
+[`reconciliation-state-matrix.md`](reconciliation-state-matrix.md).

@@ -83,10 +83,12 @@ with evidence-preserving repair and dry-run diagnostics. The supported Windows
 lane now uses verified kill-on-close Job Objects and independent durable cleanup
 evidence (`caae1c8`, `726e1cf`, `3afab31`, `77c2b54`); detached descendants are
 closed on normal exit, cancellation, timeout, and owner crash, while legacy or
-POSIX absence remains fail-closed. Nonresolvable queue/attempt quarantine states
-still lack complete public actions, so safe unattended convergence is not yet
-proven. UNC roots remain rejected; cross-machine and network-filesystem dispatch
-remain unsupported.
+POSIX absence remains fail-closed. Revision `1a3f908` closes HARD-006 for
+schema-readable state with evidence-bound public actions, exhaustive
+status-pair classification, and mutation-before-result crash replay. Malformed
+whole-record bytes remain blocked rather than reconstructed. UNC roots remain
+rejected; cross-machine and network-filesystem dispatch remain unsupported.
+Review evidence and resource ceilings remain separate unattended gates.
 
 ## Slice 5 — independent semantic review
 
