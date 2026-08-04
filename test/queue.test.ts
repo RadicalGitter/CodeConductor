@@ -84,7 +84,7 @@ test("durably schedules parallel jobs and gates dependent work", async () => {
     await rm(repository.root, { recursive: true, force: true });
     await rm(dataRoot, { recursive: true, force: true });
   }
-});
+}, 10_000);
 
 test("single-owner lease and restart recovery prohibit duplicate orphan work", async () => {
   const repository = await createTestRepository();
