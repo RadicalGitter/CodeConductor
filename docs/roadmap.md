@@ -54,6 +54,12 @@ fan-out, and isolated mutating workers.
 **Exit:** simultaneous work improves accepted throughput without shared mutable
 workspaces or duplicate attempts.
 
+**State:** conservative core implemented. Queue items, dependency gates,
+bounded concurrency, compact completion records, single-owner leases, queued
+restart recovery, and orphan quarantine are characterized. Automatic orphan
+retry and cross-machine lease semantics remain in the Extra High review
+register.
+
 ## Slice 5 — independent semantic review
 
 Hash-bound review bundles, configurable Sonnet/other reviewers, typed findings,

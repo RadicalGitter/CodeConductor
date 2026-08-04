@@ -30,6 +30,8 @@ slice are implemented. Conductor currently provides Kode and Codex adapters,
 asynchronous submission, polling, process-tree cancellation, exact-revision Git
 worktrees, atomic job/attempt manifests, proposal patches, setup evidence,
 path-scope enforcement, acceptance-command evidence, and a stdio MCP server.
+It also has a durable single-owner queue with bounded parallelism, dependency
+gates, compact completion records, and conservative restart recovery.
 
 ```powershell
 bun install
@@ -40,6 +42,12 @@ bun run start:mcp
 Runtime data defaults to `~/.conductor`. Configure it with
 `CONDUCTOR_DATA_DIR`; configure adapter executables with
 `CONDUCTOR_KODE_BIN` and `CONDUCTOR_CODEX_BIN`.
+
+The MCP process starts the dispatcher automatically. Configure capacity with
+`CONDUCTOR_MAX_CONCURRENT` (default `1`), polling with
+`CONDUCTOR_POLL_INTERVAL_MS`, and the single-machine ownership lease with
+`CONDUCTOR_LEASE_MS`. Use `enqueue_coding_job` for unattended work and
+`submit_coding_job` only for the immediate fire-and-poll compatibility lane.
 
 To bind directly to a compiled Kode fork without an installed launcher, set
 `CONDUCTOR_KODE_ENTRY` to its JavaScript entry and optionally
@@ -60,7 +68,8 @@ external/VM executor where the host boundary remains intact.
 See [the architecture](docs/architecture.md),
 [runtime contract](docs/runtime-contract.md),
 [parity map](docs/parity-map.md), [verification](docs/verification.md), and
-[roadmap](docs/roadmap.md).
+[roadmap](docs/roadmap.md). Decisions intentionally reserved for stronger
+review are tracked in [the Extra High register](docs/extra-high-review.md).
 
 ## Important current boundary
 

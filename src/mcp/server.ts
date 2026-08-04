@@ -3,9 +3,21 @@ import { z } from "zod/v4";
 
 import { CONDUCTOR_VERSION } from "../index.js";
 import { jobRequestSchema } from "../contracts/job.js";
+import {
+  queuedJobRequestSchema,
+  queueItemStatusSchema,
+} from "../contracts/queue.js";
 import { Conductor } from "../orchestrator/conductor.js";
+import { DurableDispatcher } from "../queue/dispatcher.js";
+import { QueueStore } from "../queue/queue-store.js";
 
-export function createMcpServer(conductor: Conductor): McpServer {
+export function createMcpServer(
+  conductor: Conductor,
+  dispatcher = new DurableDispatcher(
+    conductor,
+    new QueueStore(conductor.store),
+  ),
+): McpServer {
   const server = new McpServer({
     name: "conductor",
     version: CONDUCTOR_VERSION,
@@ -36,6 +48,86 @@ export function createMcpServer(conductor: Conductor): McpServer {
       },
     },
     async (input) => toolResult(await conductor.submitJob(input)),
+  );
+
+  server.registerTool(
+    "enqueue_coding_job",
+    {
+      title: "Enqueue durable coding job",
+      description:
+        "Freeze a proposal-only job and place it in the durable dependency-aware queue. The single-owner dispatcher runs it when capacity and dependencies permit.",
+      inputSchema: queuedJobRequestSchema.shape,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+      },
+    },
+    async (input) => toolResult(await dispatcher.enqueue(input)),
+  );
+
+  server.registerTool(
+    "list_queue",
+    {
+      title: "List durable queue",
+      description:
+        "List compact queue records, dependency state, attempt identity, and completion artifact pointers without reading worker transcripts.",
+      inputSchema: {
+        statuses: z.array(queueItemStatusSchema).optional(),
+      },
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async ({ statuses }) => {
+      const items = await dispatcher.list();
+      return toolResult({
+        items: statuses
+          ? items.filter((item) => statuses.includes(item.status))
+          : items,
+      });
+    },
+  );
+
+  server.registerTool(
+    "get_queue_item",
+    {
+      title: "Get queued coding job",
+      description: "Read one durable queue and compact completion record.",
+      inputSchema: { jobId: z.string().min(1) },
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async ({ jobId }) => toolResult(await dispatcher.get(jobId)),
+  );
+
+  server.registerTool(
+    "cancel_queued_job",
+    {
+      title: "Cancel queued coding job",
+      description:
+        "Cancel a waiting queue item or request cancellation of its active attempt process tree.",
+      inputSchema: { jobId: z.string().min(1) },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+      },
+    },
+    async ({ jobId }) => toolResult(await dispatcher.cancel(jobId)),
+  );
+
+  server.registerTool(
+    "retry_queued_job",
+    {
+      title: "Retry queued coding job",
+      description:
+        "Move a terminal queue item back to queued state. A retry creates a new attempt and preserves earlier evidence.",
+      inputSchema: { jobId: z.string().min(1) },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+      },
+    },
+    async ({ jobId }) => toolResult(await dispatcher.retry(jobId)),
   );
 
   server.registerTool(

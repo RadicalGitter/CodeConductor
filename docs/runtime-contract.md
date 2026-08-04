@@ -9,6 +9,11 @@
 | -------------------------- | ------------------------------------------------------------------ |
 | `list_worker_adapters`     | Lists configured adapter contracts                                 |
 | `submit_coding_job`        | Freezes a job and starts an isolated attempt without waiting       |
+| `enqueue_coding_job`       | Freezes a job and durably queues it with dependency metadata       |
+| `list_queue`               | Reads compact queue and completion records                         |
+| `get_queue_item`           | Reads one queue record                                             |
+| `cancel_queued_job`        | Cancels waiting work or its active process tree                    |
+| `retry_queued_job`         | Requeues terminal work as a new evidence-preserving attempt        |
 | `get_attempt`              | Reads a durable attempt manifest                                   |
 | `get_verification`         | Reads typed deterministic verification evidence                    |
 | `read_attempt_artifact`    | Reads a bounded named artifact without arbitrary path access       |
@@ -38,6 +43,9 @@ its own worktree.
       setup-*.stdout.log / setup-*.stderr.log
       acceptance-*.stdout.log / acceptance-*.stderr.log
   workspaces/<attempt-id>/
+  queue/
+    items/<job-id>/queue.json
+    dispatcher.lock/lease.json
 ```
 
 Job and initial-attempt reservations become visible through atomic directory
@@ -66,8 +74,14 @@ names.
 
 ## Restart semantics
 
-Completed manifests and artifacts survive process restart. A restarted process
-can read any attempt, but it cannot recover ownership of an already-running OS
-process in this slice. `wait_for_attempt` therefore returns the last durable
-state when no in-memory execution owner exists. Lease and orphan recovery
-belong to the durable-queue slice.
+Completed manifests, queue items, and artifacts survive process restart. One
+heartbeat lease owns dispatch. A restarted dispatcher resumes queued work and
+reconstructs compact completion state from terminal attempt manifests. If an
+attempt was active when ownership disappeared, its queue item becomes
+`needs-input`; Conductor does not duplicate it or kill a possibly reused bare
+PID. Automatic orphan retry remains an explicitly reviewed future policy.
+
+Queue completion means the worker completed and deterministic evidence was
+eligible. Ineligible successful worker output becomes `needs-input`, not a
+successful dependency. Retrying preserves the prior attempt and reserves a new
+ordinal.

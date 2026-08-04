@@ -49,7 +49,7 @@ export class WorkerRegistry {
 export function buildWorkerPrompt(contract: JobContract): string {
   const allowed = contract.scope.allowedPaths.length
     ? contract.scope.allowedPaths.join(", ")
-    : "(the assigned worktree; hard path enforcement is not enabled in this runtime slice)";
+    : "(the assigned worktree; deterministic post-run scope checks still apply)";
   const forbidden = contract.scope.forbiddenPaths.length
     ? contract.scope.forbiddenPaths.join(", ")
     : "(none declared)";

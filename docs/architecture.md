@@ -41,8 +41,8 @@ status.
 ## Lifecycle
 
 ```text
-job:     proposed -> validated -> active -> completed
-                              \-> cancelled
+queue:   queued -> running -> completed
+              \-> cancelled | failed | needs-input
 
 attempt: reserved -> preparing -> running -> verifying -> completed
                               \-> failed      \-> cancelled
@@ -53,6 +53,11 @@ proposal: completed -> review-pending -> accepted | rejected | superseded
 
 Attempt terminal state is never overwritten by review disposition. A retry is a
 new attempt under the same frozen job.
+
+Only one dispatcher lease owns queue-to-process transitions. Independent jobs
+may run up to the configured capacity; every mutation still receives its own
+worktree. Dependencies gate start, not acceptance: a dependency is satisfied
+only by a completed attempt with eligible deterministic evidence.
 
 ## Execution boundary
 

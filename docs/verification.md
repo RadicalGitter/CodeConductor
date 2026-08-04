@@ -84,3 +84,17 @@ The negative cases remain first-class: protected-path proposals finish as
 worker outputs but are marked ineligible; dirty setup stops the worker;
 mutating checks are ineligible even with exit code zero; unconfigured commands
 are policy-denied rather than silently executed.
+
+## Durable queue slice
+
+The suite now has 20 tests and 105 assertions. Queue characterization proves:
+
+- two independent delayed workers overlap in separate worktrees at configured
+  concurrency two;
+- a dependent worker does not start until its prerequisite has finished with
+  eligible evidence;
+- completion records retain compact pointers to manifests, patches, changed
+  paths, and verification;
+- a second dispatcher cannot acquire an unexpired owner lease;
+- restart recovery quarantines a reserved/running orphan instead of spawning a
+  duplicate attempt.

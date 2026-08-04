@@ -3,7 +3,11 @@ import { open, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { AttemptManifest } from "../contracts/attempt.js";
-import { freezeJobRequest, jobRequestSchema } from "../contracts/job.js";
+import {
+  freezeJobRequest,
+  jobRequestSchema,
+  type JobContract,
+} from "../contracts/job.js";
 import { runProcess } from "../runtime/process-runner.js";
 import { selectParentEnvironment } from "../runtime/environment.js";
 import { ArtifactStore } from "../storage/artifact-store.js";
@@ -49,7 +53,7 @@ export class Conductor {
     readonly executionPolicy = new ExecutionPolicy(),
   ) {}
 
-  async submitJob(input: unknown): Promise<RunJobResult> {
+  async prepareJob(input: unknown): Promise<JobContract> {
     const request = jobRequestSchema.parse(input);
     const requestedAdapter = this.workers.get(request.adapterId);
     if (!requestedAdapter.description.available) {
@@ -64,31 +68,55 @@ export class Conductor {
       baseRevision: repository.revision,
     });
     const reservation = await this.store.reserveJob(candidate);
-    const attemptReservation = await this.store.reserveInitialAttempt(
-      reservation.contract,
-    );
+    return reservation.contract;
+  }
+
+  async submitJob(input: unknown): Promise<RunJobResult> {
+    const contract = await this.prepareJob(input);
+    const attemptReservation = await this.store.reserveInitialAttempt(contract);
     if (!attemptReservation.created) {
       return summarize(attemptReservation.manifest, true);
     }
-    const abortController = new AbortController();
-    this.activeAttempts.set(
-      attemptReservation.manifest.attemptId,
-      abortController,
-    );
-    const execution = this.executeAttempt(
-      reservation.contract,
-      attemptReservation.manifest,
-      abortController,
-    ).finally(() => {
-      this.activeAttempts.delete(attemptReservation.manifest.attemptId);
-      this.executions.delete(attemptReservation.manifest.attemptId);
-    });
-    this.executions.set(attemptReservation.manifest.attemptId, execution);
-    // Submission is intentionally fire-and-poll. Attach a rejection observer so
-    // a catastrophic persistence failure cannot become an unhandled rejection;
-    // explicit waiters still receive the original rejected promise.
-    void execution.catch(() => undefined);
+    this.launchAttempt(contract, attemptReservation.manifest);
     return summarize(attemptReservation.manifest, false);
+  }
+
+  async startPreparedJob(jobId: string): Promise<RunJobResult> {
+    const reserved = await this.reservePreparedAttempt(jobId);
+    return this.startReservedAttempt(reserved.attemptId);
+  }
+
+  async reservePreparedAttempt(jobId: string): Promise<RunJobResult> {
+    const contract = await this.store.readJob(jobId);
+    const adapter = this.workers.get(contract.worker.adapterId);
+    if (!adapter.description.available) {
+      throw new Error(
+        `Worker adapter is not available: ${contract.worker.adapterId}`,
+      );
+    }
+    const attemptReservation = await this.store.reserveAttempt(contract);
+    return summarize(attemptReservation.manifest, false);
+  }
+
+  async startReservedAttempt(attemptId: string): Promise<RunJobResult> {
+    const manifest = await this.getAttempt(attemptId);
+    if (manifest.status !== "reserved") {
+      throw new Error(
+        `Attempt ${attemptId} cannot start from status ${manifest.status}`,
+      );
+    }
+    if (this.executions.has(attemptId)) {
+      throw new Error(`Attempt ${attemptId} is already executing`);
+    }
+    const contract = await this.store.readJob(manifest.jobId);
+    const adapter = this.workers.get(contract.worker.adapterId);
+    if (!adapter.description.available) {
+      throw new Error(
+        `Worker adapter is not available: ${contract.worker.adapterId}`,
+      );
+    }
+    this.launchAttempt(contract, manifest);
+    return summarize(manifest, false);
   }
 
   async runJob(input: unknown): Promise<RunJobResult> {
@@ -162,6 +190,20 @@ export class Conductor {
     return true;
   }
 
+  async cancelReservedAttempt(
+    attemptId: string,
+    message = "Attempt cancelled before worker execution",
+  ): Promise<AttemptManifest> {
+    const manifest = await this.getAttempt(attemptId);
+    if (manifest.status !== "reserved") return manifest;
+    return this.update(manifest, {
+      status: "cancelled",
+      finishedAt: new Date().toISOString(),
+      verificationStatus: "ineligible",
+      failure: { kind: "cancelled", message },
+    });
+  }
+
   async removeAttemptWorkspace(attemptId: string): Promise<AttemptManifest> {
     const manifest = await this.getAttempt(attemptId);
     if (
@@ -184,6 +226,27 @@ export class Conductor {
     return this.update(manifest, {
       workspace: { ...manifest.workspace, retained: false },
     });
+  }
+
+  private launchAttempt(
+    contract: JobContract,
+    manifest: AttemptManifest,
+  ): void {
+    const abortController = new AbortController();
+    this.activeAttempts.set(manifest.attemptId, abortController);
+    const execution = this.executeAttempt(
+      contract,
+      manifest,
+      abortController,
+    ).finally(() => {
+      this.activeAttempts.delete(manifest.attemptId);
+      this.executions.delete(manifest.attemptId);
+    });
+    this.executions.set(manifest.attemptId, execution);
+    // Submission is intentionally fire-and-poll. Attach a rejection observer so
+    // a catastrophic persistence failure cannot become an unhandled rejection;
+    // explicit waiters still receive the original rejected promise.
+    void execution.catch(() => undefined);
   }
 
   private async executeAttempt(
