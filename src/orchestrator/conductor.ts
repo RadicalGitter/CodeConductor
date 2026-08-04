@@ -1,6 +1,12 @@
-import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { open, readFile, stat, writeFile } from "node:fs/promises";
+import {
+  open,
+  readFile,
+  readdir,
+  stat,
+  statfs,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -24,13 +30,17 @@ import {
   type JobContract,
 } from "../contracts/job.js";
 import {
+  DEFAULT_OWNER_RESOURCE_PROFILE,
+  type OwnerResourceProfile,
+} from "../contracts/resources.js";
+import {
   isProcessAlive,
   runProcess,
   type ProcessExecutionResult,
   type ProcessGuardianIdentity,
   type ProcessResult,
 } from "../runtime/process-runner.js";
-import { selectParentEnvironment } from "../runtime/environment.js";
+import { runBoundedGit } from "../runtime/git.js";
 import { SandboxProfiles, validateSandboxCommand } from "../sandbox/docker.js";
 import {
   buildReviewPacket,
@@ -101,10 +111,24 @@ export class Conductor {
     readonly workers: WorkerRegistry,
     readonly executionPolicy = new ExecutionPolicy(),
     readonly sandboxProfiles = new SandboxProfiles(),
+    readonly resourceProfile: OwnerResourceProfile = DEFAULT_OWNER_RESOURCE_PROFILE,
   ) {}
 
   async prepareJob(input: unknown): Promise<JobContract> {
     const request = jobRequestSchema.parse(input);
+    const commandCount =
+      request.setupCommands.length + request.acceptanceCommands.length;
+    if (commandCount > this.resourceProfile.limits.maxCommands) {
+      throw new Error(
+        `Job declares ${commandCount} commands; owner profile allows ${this.resourceProfile.limits.maxCommands}`,
+      );
+    }
+    const requestBytes = Buffer.byteLength(JSON.stringify(request), "utf8");
+    if (requestBytes > this.resourceProfile.limits.maxArtifactBytes) {
+      throw new Error(
+        `Job request is ${requestBytes} bytes; owner profile allows ${this.resourceProfile.limits.maxArtifactBytes} artifact bytes`,
+      );
+    }
     const requestedAdapter = this.workers.get(request.adapterId);
     if (!requestedAdapter.description.available) {
       throw new Error(`Worker adapter is not available: ${request.adapterId}`);
@@ -130,12 +154,21 @@ export class Conductor {
     const repository = await this.workspaces.inspectRepository(
       request.repositoryPath,
       request.baseRef,
+      {
+        gitTimeoutMs: this.resourceProfile.limits.gitTimeoutMs,
+        maxGitOutputBytes: this.resourceProfile.limits.maxLogBytes,
+      },
     );
     const candidate = freezeJobRequest(request, {
       repositoryRoot: repository.root,
       baseRevision: repository.revision,
       sandboxBinding,
+      resourceProfile: this.resourceProfile,
     });
+    await assertDiskHeadroom(
+      this.store.root,
+      candidate.resources.minimumFreeDiskBytes,
+    );
     const reservation = await this.store.reserveJob(candidate);
     return reservation.contract;
   }
@@ -146,6 +179,11 @@ export class Conductor {
     dispatchOperationId?: string,
   ): Promise<RunJobResult> {
     const contract = await this.store.readJob(jobId);
+    if (parentAttemptIds.length > contract.resources.maxLineageContributions) {
+      throw new ProposalLineageError(
+        `Direct proposal lineage has ${parentAttemptIds.length} parents; budget allows ${contract.resources.maxLineageContributions}`,
+      );
+    }
     const adapter = this.workers.get(contract.worker.adapterId);
     if (!adapter.description.available) {
       throw new Error(
@@ -509,6 +547,21 @@ export class Conductor {
       add(await this.bindProposalContribution(contract, parent));
     }
 
+    if (contributions.size > contract.resources.maxLineageContributions) {
+      throw new Error(
+        `Proposal lineage has ${contributions.size} contributions; budget allows ${contract.resources.maxLineageContributions}`,
+      );
+    }
+    const lineageBytes = [...contributions.values()].reduce(
+      (total, contribution) => total + contribution.patchBytes,
+      0,
+    );
+    if (lineageBytes > contract.resources.maxArtifactBytes) {
+      throw new Error(
+        `Proposal lineage binds ${lineageBytes} patch bytes; budget allows ${contract.resources.maxArtifactBytes}`,
+      );
+    }
+
     const lineage = proposalLineageSchema.parse({
       schema: "conductor.proposal-lineage/v1",
       sourceBaseRevision: contract.repository.baseRevision,
@@ -801,6 +854,10 @@ export class Conductor {
         path: manifest.workspace.path,
         repositoryRoot: contract.repository.root,
         baseRevision: manifest.workspace.baseRevision,
+        gitTimeoutMs: contract.resources.gitTimeoutMs,
+        maxGitOutputBytes: contract.resources.maxLogBytes,
+        cleanupTimeoutMs: contract.resources.cleanupTimeoutMs,
+        maxPatchBytes: contract.resources.maxPatchBytes,
       });
       const cleanup = await this.appendCleanupEvidence(manifest, {
         subject: { kind: "workspace", id: "worktree" },
@@ -846,8 +903,19 @@ export class Conductor {
     initialManifest: AttemptManifest,
     abortController: AbortController,
   ): Promise<AttemptManifest> {
+    const deadlineAt = Date.now() + contract.resources.attemptTimeoutMs;
+    const deadlineSignal = AbortSignal.timeout(
+      contract.resources.attemptTimeoutMs,
+    );
+    const budgetController = new AbortController();
+    const attemptSignal = AbortSignal.any([
+      abortController.signal,
+      deadlineSignal,
+      budgetController.signal,
+    ]);
     let manifest = initialManifest;
     let workspace: GitWorkspace | undefined;
+    let budgetMonitor: ResourceBudgetMonitor | undefined;
     let verification = createVerificationRecord({
       jobId: contract.jobId,
       attemptId: initialManifest.attemptId,
@@ -861,7 +929,19 @@ export class Conductor {
         repositoryRoot: contract.repository.root,
         baseRevision: contract.repository.baseRevision,
         attemptId: manifest.attemptId,
+        gitTimeoutMs: contract.resources.gitTimeoutMs,
+        maxGitOutputBytes: contract.resources.maxLogBytes,
+        cleanupTimeoutMs: contract.resources.cleanupTimeoutMs,
+        maxPatchBytes: contract.resources.maxPatchBytes,
       });
+      budgetMonitor = new ResourceBudgetMonitor(
+        workspace.path,
+        path.dirname(manifest.artifacts.manifest),
+        contract,
+        budgetController,
+      );
+      budgetMonitor.start();
+      await budgetMonitor.assertWithinBudget();
       manifest = await this.update(manifest, {
         workspace: {
           path: workspace.path,
@@ -927,8 +1007,11 @@ export class Conductor {
           workspacePath: workspace.path,
           artifactDirectory: path.dirname(manifest.artifacts.manifest),
           defaultTimeoutMs: contract.execution.timeoutMs,
+          deadlineAt,
+          maxLogBytes: contract.resources.maxLogBytes,
+          cleanupTimeoutMs: contract.resources.cleanupTimeoutMs,
           policy: this.executionPolicy,
-          signal: abortController.signal,
+          signal: attemptSignal,
           executionBoundary: contract.execution.boundary,
           attemptId: manifest.attemptId,
           onGuardianReady: async (operationId, identity) => {
@@ -940,7 +1023,11 @@ export class Conductor {
             assertProcessCleanupProven(operationId, result);
           },
           onExternalResource: async (resource) => {
-            manifest = await this.registerExternalResource(manifest, resource);
+            manifest = await this.registerExternalResource(
+              manifest,
+              resource,
+              contract.resources.maxExternalResources,
+            );
           },
           onExternalResourceReleased: async (resourceId, cleanup) => {
             manifest = await this.releaseExternalResource(
@@ -950,12 +1037,13 @@ export class Conductor {
             );
           },
         });
+        await budgetMonitor.assertWithinBudget();
         const repositoryClean =
-          (await captureGit(workspace.path, [
-            "status",
-            "--porcelain=v2",
-            "--untracked-files=all",
-          ])) === "";
+          (await captureGit(
+            workspace.path,
+            ["status", "--porcelain=v2", "--untracked-files=all"],
+            contract,
+          )) === "";
         verification = {
           ...verification,
           setup: {
@@ -966,7 +1054,9 @@ export class Conductor {
         };
         await this.writeVerification(manifest, verification);
         if (verification.setup.status !== "passed") {
-          const cancelled = verification.setup.status === "cancelled";
+          const cancelled =
+            verification.setup.status === "cancelled" &&
+            !deadlineSignal.aborted;
           verification = {
             ...verification,
             acceptance: {
@@ -982,10 +1072,16 @@ export class Conductor {
             finishedAt: new Date().toISOString(),
             verificationStatus: "ineligible",
             failure: {
-              kind: cancelled ? "cancelled" : "setup-failed",
-              message: repositoryClean
-                ? `Setup phase ended with ${verification.setup.status}`
-                : "Setup commands changed tracked or untracked repository state",
+              kind: deadlineSignal.aborted
+                ? "timeout"
+                : cancelled
+                  ? "cancelled"
+                  : "setup-failed",
+              message: deadlineSignal.aborted
+                ? "Total attempt deadline expired during setup"
+                : repositoryClean
+                  ? `Setup phase ended with ${verification.setup.status}`
+                  : "Setup commands changed tracked or untracked repository state",
             },
           });
           throw new TerminalAttempt(manifest);
@@ -1023,8 +1119,10 @@ export class Conductor {
       const processResult = await runProcess(invocation, {
         stdoutPath: manifest.artifacts.stdout,
         stderrPath: manifest.artifacts.stderr,
-        timeoutMs: contract.execution.timeoutMs,
-        signal: abortController.signal,
+        timeoutMs: remainingTimeout(deadlineAt),
+        signal: attemptSignal,
+        maxStdoutBytes: contract.resources.maxLogBytes,
+        maxStderrBytes: contract.resources.maxLogBytes,
         onGuardianReady: async (identity) => {
           await this.registerProcessCleanup(manifest, "worker", identity);
           manifest = await this.update(manifest, { guardian: identity });
@@ -1036,12 +1134,25 @@ export class Conductor {
           });
         },
       });
+      await budgetMonitor.assertWithinBudget();
       await this.recordProcessCleanup(manifest, "worker", processResult);
       assertProcessCleanupProven("worker", processResult);
+      if (processResult.outputLimit) {
+        throw new ResourceLimitError(
+          `${processResult.outputLimit.stream} exceeded ${processResult.outputLimit.limitBytes} bytes`,
+        );
+      }
       let proposal: ProposalCapture;
       try {
-        proposal = await captureProposal(workspace, manifest);
+        proposal = await captureProposal(workspace, manifest, contract);
+        await budgetMonitor.assertWithinBudget();
       } catch (error) {
+        let captureError = error;
+        try {
+          await budgetMonitor.assertWithinBudget();
+        } catch (budgetError) {
+          captureError = budgetError;
+        }
         verification = {
           ...verification,
           acceptance: {
@@ -1058,8 +1169,11 @@ export class Conductor {
           process: processResult,
           verificationStatus: "ineligible",
           failure: {
-            kind: "proposal-capture-failed",
-            message: errorMessage(error),
+            kind:
+              captureError instanceof ResourceLimitError
+                ? "resource-limit"
+                : "proposal-capture-failed",
+            message: errorMessage(captureError),
           },
         });
         throw new TerminalAttempt(manifest);
@@ -1089,13 +1203,15 @@ export class Conductor {
 
       if (processResult.cancelled) {
         manifest = await this.update(manifest, {
-          status: "cancelled",
+          status: deadlineSignal.aborted ? "failed" : "cancelled",
           finishedAt: new Date().toISOString(),
           process: processResult,
           verificationStatus: "ineligible",
           failure: {
-            kind: "cancelled",
-            message: "Attempt cancelled by Conductor",
+            kind: deadlineSignal.aborted ? "timeout" : "cancelled",
+            message: deadlineSignal.aborted
+              ? "Total attempt deadline expired during worker execution"
+              : "Attempt cancelled by Conductor",
           },
         });
       } else if (processResult.timedOut) {
@@ -1142,8 +1258,11 @@ export class Conductor {
             workspacePath: workspace.path,
             artifactDirectory: path.dirname(manifest.artifacts.manifest),
             defaultTimeoutMs: contract.execution.timeoutMs,
+            deadlineAt,
+            maxLogBytes: contract.resources.maxLogBytes,
+            cleanupTimeoutMs: contract.resources.cleanupTimeoutMs,
             policy: this.executionPolicy,
-            signal: abortController.signal,
+            signal: attemptSignal,
             executionBoundary: contract.execution.boundary,
             attemptId: manifest.attemptId,
             onGuardianReady: async (operationId, identity) => {
@@ -1162,6 +1281,7 @@ export class Conductor {
               manifest = await this.registerExternalResource(
                 manifest,
                 resource,
+                contract.resources.maxExternalResources,
               );
             },
             onExternalResourceReleased: async (resourceId, cleanup) => {
@@ -1172,7 +1292,9 @@ export class Conductor {
               );
             },
           });
-          const finalPatch = await captureCurrentPatch(workspace);
+          await budgetMonitor.assertWithinBudget();
+          const finalPatch = await captureCurrentPatch(workspace, contract);
+          await budgetMonitor.assertWithinBudget();
           const proposalStable = finalPatch === proposal.patch;
           verification = {
             ...verification,
@@ -1203,19 +1325,32 @@ export class Conductor {
         await this.writeVerification(manifest, verification);
         const verificationCancelled =
           verification.acceptance.status === "cancelled";
+        const verificationTimedOut =
+          verificationCancelled && deadlineSignal.aborted;
         manifest = await this.update(manifest, {
-          status: verificationCancelled ? "cancelled" : "completed",
+          status: verificationTimedOut
+            ? "failed"
+            : verificationCancelled
+              ? "cancelled"
+              : "completed",
           finishedAt: new Date().toISOString(),
           process: processResult,
           verificationStatus: verification.eligibleForReview
             ? "eligible"
             : "ineligible",
-          failure: verificationCancelled
+          failure: verificationTimedOut
             ? {
-                kind: "cancelled",
-                message: "Attempt cancelled during deterministic verification",
+                kind: "timeout",
+                message:
+                  "Total attempt deadline expired during deterministic verification",
               }
-            : undefined,
+            : verificationCancelled
+              ? {
+                  kind: "cancelled",
+                  message:
+                    "Attempt cancelled during deterministic verification",
+                }
+              : undefined,
         });
       }
     } catch (error) {
@@ -1223,17 +1358,21 @@ export class Conductor {
         manifest = error.manifest;
       } else {
         manifest = await this.update(manifest, {
-          status: abortController.signal.aborted ? "cancelled" : "failed",
+          status:
+            abortController.signal.aborted && !deadlineSignal.aborted
+              ? "cancelled"
+              : "failed",
           finishedAt: new Date().toISOString(),
           failure: classifyFailure(
             error,
             manifest.status,
-            abortController.signal.aborted,
+            abortController.signal.aborted && !deadlineSignal.aborted,
           ),
           verificationStatus: "ineligible",
         });
       }
     } finally {
+      budgetMonitor?.stop();
       if (workspace && !contract.execution.retainWorkspace) {
         try {
           const externalCleanup = await this.cleanupExternalResources(manifest);
@@ -1280,7 +1419,16 @@ export class Conductor {
   private async registerExternalResource(
     manifest: AttemptManifest,
     resource: ExternalResource,
+    maximum: number,
   ): Promise<AttemptManifest> {
+    const knownIds = new Set(
+      manifest.externalResources.map((entry) => entry.resourceId),
+    );
+    if (!knownIds.has(resource.resourceId) && knownIds.size >= maximum) {
+      throw new ResourceLimitError(
+        `external resources exceed the frozen maximum of ${maximum}`,
+      );
+    }
     await this.registerCleanupRequirement(manifest, {
       kind: "external-resource",
       id: resource.resourceId,
@@ -1384,6 +1532,7 @@ export class Conductor {
     initialManifest: AttemptManifest,
   ): Promise<{ manifest: AttemptManifest; safe: boolean }> {
     let manifest = initialManifest;
+    const contract = await this.store.readJob(manifest.jobId);
     for (const resource of manifest.externalResources) {
       if (resource.status !== "active") continue;
       const existingCleanup = await this.getAttemptCleanup(manifest.attemptId);
@@ -1404,24 +1553,24 @@ export class Conductor {
         `recovery-${resource.resourceId}`,
       );
       try {
-        const result = await runProcess(
-          {
-            executable: resource.cleanup.executable,
-            args: resource.cleanup.args,
-            cwd: resource.cleanup.cwd,
-          },
-          {
-            stdoutPath: `${prefix}.stdout.log`,
-            stderrPath: `${prefix}.stderr.log`,
-            timeoutMs: 24_000,
-            onGuardianReady: (identity) =>
-              this.registerProcessCleanup(
-                manifest,
-                `external-resource-cleanup:${resource.resourceId}`,
-                identity,
-              ),
-          },
+        const cleanupInvocation = reconstructExternalCleanup(
+          contract,
+          manifest,
+          resource,
         );
+        const result = await runProcess(cleanupInvocation, {
+          stdoutPath: `${prefix}.stdout.log`,
+          stderrPath: `${prefix}.stderr.log`,
+          timeoutMs: contract.resources.cleanupTimeoutMs,
+          maxStdoutBytes: contract.resources.maxLogBytes,
+          maxStderrBytes: contract.resources.maxLogBytes,
+          onGuardianReady: (identity) =>
+            this.registerProcessCleanup(
+              manifest,
+              `external-resource-cleanup:${resource.resourceId}`,
+              identity,
+            ),
+        });
         await this.recordProcessCleanup(
           manifest,
           `external-resource-cleanup:${resource.resourceId}`,
@@ -1429,6 +1578,7 @@ export class Conductor {
         );
         const stderr = await readFile(`${prefix}.stderr.log`, "utf8");
         if (
+          result.outputLimit ||
           result.termination.status !== "proven" ||
           (result.exitCode !== 0 && !/No such container/i.test(stderr))
         ) {
@@ -1534,6 +1684,129 @@ class TerminalAttempt extends Error {
   }
 }
 
+class ResourceLimitError extends Error {
+  constructor(message: string) {
+    super(`Resource budget exceeded: ${message}`);
+    this.name = "ResourceLimitError";
+  }
+}
+
+class ResourceBudgetMonitor {
+  private timer?: ReturnType<typeof setInterval>;
+  private sampling = false;
+  private failure?: ResourceLimitError;
+
+  constructor(
+    private readonly workspacePath: string,
+    private readonly artifactDirectory: string,
+    private readonly contract: JobContract,
+    private readonly controller: AbortController,
+  ) {}
+
+  start(): void {
+    this.timer = setInterval(() => void this.sample(), 250);
+    this.timer.unref();
+  }
+
+  stop(): void {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = undefined;
+  }
+
+  async assertWithinBudget(): Promise<void> {
+    while (this.sampling) await delay(5);
+    await this.sample();
+    if (this.failure) throw this.failure;
+  }
+
+  private async sample(): Promise<void> {
+    if (this.sampling || this.failure) return;
+    this.sampling = true;
+    try {
+      const [worktreeBytes, artifactBytes, filesystem] = await Promise.all([
+        boundedDirectorySize(
+          this.workspacePath,
+          this.contract.resources.maxWorktreeBytes,
+        ),
+        boundedDirectorySize(
+          this.artifactDirectory,
+          this.contract.resources.maxArtifactBytes,
+        ),
+        statfs(this.workspacePath),
+      ]);
+      if (worktreeBytes > this.contract.resources.maxWorktreeBytes) {
+        throw new ResourceLimitError(
+          `worktree exceeded ${this.contract.resources.maxWorktreeBytes} bytes`,
+        );
+      }
+      if (artifactBytes > this.contract.resources.maxArtifactBytes) {
+        throw new ResourceLimitError(
+          `attempt artifacts exceeded ${this.contract.resources.maxArtifactBytes} bytes`,
+        );
+      }
+      const freeBytes = filesystem.bavail * filesystem.bsize;
+      if (freeBytes < this.contract.resources.minimumFreeDiskBytes) {
+        throw new ResourceLimitError(
+          `free disk fell below ${this.contract.resources.minimumFreeDiskBytes} bytes`,
+        );
+      }
+    } catch (error) {
+      this.failure =
+        error instanceof ResourceLimitError
+          ? error
+          : new ResourceLimitError(
+              `resource monitor failed: ${errorMessage(error)}`,
+            );
+      this.controller.abort(this.failure);
+    } finally {
+      this.sampling = false;
+    }
+  }
+}
+
+async function boundedDirectorySize(
+  root: string,
+  maximum: number,
+): Promise<number> {
+  let total = 0;
+  const pending = [root];
+  while (pending.length > 0 && total <= maximum) {
+    const current = pending.pop()!;
+    let entries;
+    try {
+      entries = await readdir(current, { withFileTypes: true });
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        error.code === "ENOENT"
+      ) {
+        continue;
+      }
+      throw error;
+    }
+    for (const entry of entries) {
+      const target = path.join(current, entry.name);
+      if (entry.isDirectory()) pending.push(target);
+      else if (entry.isFile()) {
+        try {
+          total += (await stat(target)).size;
+        } catch (error) {
+          if (!(
+            error instanceof Error &&
+            "code" in error &&
+            error.code === "ENOENT"
+          )) {
+            throw error;
+          }
+        }
+      }
+      if (total > maximum) return total;
+    }
+  }
+  return total;
+}
+
 interface ProposalCapture {
   patch: string;
   changedPaths: string[];
@@ -1542,30 +1815,43 @@ interface ProposalCapture {
 async function captureProposal(
   workspace: GitWorkspace,
   manifest: AttemptManifest,
+  contract: JobContract,
 ): Promise<ProposalCapture> {
-  await captureGit(workspace.path, ["add", "--intent-to-add", "--all"]);
+  await captureGit(
+    workspace.path,
+    ["add", "--intent-to-add", "--all"],
+    contract,
+  );
   const [patch, status, names] = await Promise.all([
-    captureGit(workspace.path, [
-      "diff",
-      "--binary",
-      "--full-index",
-      workspace.baseRevision,
-      "--",
-    ]),
-    captureGit(workspace.path, [
-      "status",
-      "--porcelain=v2",
-      "--untracked-files=all",
-    ]),
-    captureGit(workspace.path, [
-      "diff",
-      "--name-only",
-      "-z",
-      workspace.baseRevision,
-      "--",
-    ]),
+    captureGit(
+      workspace.path,
+      ["diff", "--binary", "--full-index", workspace.baseRevision, "--"],
+      contract,
+      contract.resources.maxPatchBytes,
+    ),
+    captureGit(
+      workspace.path,
+      ["status", "--porcelain=v2", "--untracked-files=all"],
+      contract,
+    ),
+    captureGit(
+      workspace.path,
+      ["diff", "--name-only", "-z", workspace.baseRevision, "--"],
+      contract,
+    ),
   ]);
   const changedPaths = names.split("\0").filter(Boolean).sort();
+  const patchBytes = Buffer.byteLength(patch, "utf8");
+  if (patchBytes > contract.resources.maxPatchBytes) {
+    throw new ResourceLimitError(
+      `proposal patch is ${patchBytes} bytes; maximum is ${contract.resources.maxPatchBytes}`,
+    );
+  }
+  if (changedPaths.length > contract.resources.maxChangedPaths) {
+    throw new ResourceLimitError(
+      `proposal changes ${changedPaths.length} paths; maximum is ${contract.resources.maxChangedPaths}`,
+    );
+  }
   await Promise.all([
     writeFile(manifest.artifacts.proposalPatch, patch, "utf8"),
     writeFile(manifest.artifacts.repositoryStatus, status, "utf8"),
@@ -1578,15 +1864,28 @@ async function captureProposal(
   return { patch, changedPaths };
 }
 
-async function captureCurrentPatch(workspace: GitWorkspace): Promise<string> {
-  await captureGit(workspace.path, ["add", "--intent-to-add", "--all"]);
-  return captureGit(workspace.path, [
-    "diff",
-    "--binary",
-    "--full-index",
-    workspace.baseRevision,
-    "--",
-  ]);
+async function captureCurrentPatch(
+  workspace: GitWorkspace,
+  contract: JobContract,
+): Promise<string> {
+  await captureGit(
+    workspace.path,
+    ["add", "--intent-to-add", "--all"],
+    contract,
+  );
+  const patch = await captureGit(
+    workspace.path,
+    ["diff", "--binary", "--full-index", workspace.baseRevision, "--"],
+    contract,
+    contract.resources.maxPatchBytes,
+  );
+  const patchBytes = Buffer.byteLength(patch, "utf8");
+  if (patchBytes > contract.resources.maxPatchBytes) {
+    throw new ResourceLimitError(
+      `verified patch is ${patchBytes} bytes; maximum is ${contract.resources.maxPatchBytes}`,
+    );
+  }
+  return patch;
 }
 
 async function runCommandSequence(input: {
@@ -1595,6 +1894,9 @@ async function runCommandSequence(input: {
   workspacePath: string;
   artifactDirectory: string;
   defaultTimeoutMs: number;
+  deadlineAt: number;
+  maxLogBytes: number;
+  cleanupTimeoutMs: number;
   policy: ExecutionPolicy;
   signal: AbortSignal;
   onGuardianReady?: (
@@ -1623,6 +1925,9 @@ async function runCommandSequence(input: {
       workspacePath: input.workspacePath,
       artifactDirectory: input.artifactDirectory,
       defaultTimeoutMs: input.defaultTimeoutMs,
+      maximumTimeoutMs: remainingTimeout(input.deadlineAt),
+      maxLogBytes: input.maxLogBytes,
+      cleanupTimeoutMs: input.cleanupTimeoutMs,
       policy: input.policy,
       signal: input.signal,
       onGuardianReady: (identity) =>
@@ -1635,6 +1940,11 @@ async function runCommandSequence(input: {
       onExternalResourceReleased: input.onExternalResourceReleased,
     });
     evidence.push(result);
+    if (result.process?.outputLimit) {
+      throw new ResourceLimitError(
+        `${operationId} ${result.process.outputLimit.stream} exceeded ${result.process.outputLimit.limitBytes} bytes`,
+      );
+    }
     if (result.status !== "passed") break;
   }
   return evidence;
@@ -1653,28 +1963,21 @@ function phaseStatus(
     : "failed";
 }
 
-function captureGit(cwd: string, args: string[]): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn("git", ["-C", cwd, ...args], {
-      shell: false,
-      windowsHide: true,
-      env: selectParentEnvironment(),
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => (stdout += chunk));
-    child.stderr.on("data", (chunk) => (stderr += chunk));
-    child.once("error", reject);
-    child.once("close", (code) => {
-      if (code === 0) resolve(stdout);
-      else
-        reject(
-          new Error(`git ${args[0] ?? ""} failed (${code}): ${stderr.trim()}`),
-        );
-    });
+function captureGit(
+  cwd: string,
+  args: string[],
+  contract: JobContract,
+  maxOutputBytes = contract.resources.maxLogBytes,
+): Promise<string> {
+  return runBoundedGit(cwd, args, {
+    timeoutMs: contract.resources.gitTimeoutMs,
+    maxOutputBytes,
+    trim: false,
+  }).catch((error: unknown) => {
+    if (errorMessage(error).includes("output exceeded")) {
+      throw new ResourceLimitError(errorMessage(error));
+    }
+    throw error;
   });
 }
 
@@ -1683,6 +1986,9 @@ function classifyFailure(
   status: AttemptManifest["status"],
   cancelled: boolean,
 ): AttemptManifest["failure"] {
+  if (error instanceof ResourceLimitError) {
+    return { kind: "resource-limit", message: error.message };
+  }
   if (cancelled)
     return { kind: "cancelled", message: "Attempt cancelled by Conductor" };
   if (status === "preparing")
@@ -1690,6 +1996,40 @@ function classifyFailure(
   if (status === "running")
     return { kind: "spawn-failed", message: errorMessage(error) };
   return { kind: "orchestrator-error", message: errorMessage(error) };
+}
+
+function remainingTimeout(deadlineAt: number): number {
+  const remaining = deadlineAt - Date.now();
+  if (remaining <= 0) throw new Error("Total attempt deadline expired");
+  return remaining;
+}
+
+function reconstructExternalCleanup(
+  contract: JobContract,
+  manifest: AttemptManifest,
+  resource: ExternalResource,
+): { executable: string; args: string[]; cwd: string } {
+  const boundary = contract.execution.boundary;
+  if (boundary.kind !== "external-sandbox") {
+    throw new Error(
+      `External resource ${resource.resourceId} has no frozen sandbox owner profile`,
+    );
+  }
+  if (
+    resource.driver !== boundary.driver ||
+    resource.profileId !== boundary.profileId ||
+    resource.profileFingerprint !== boundary.profileFingerprint ||
+    resource.image !== boundary.image
+  ) {
+    throw new Error(
+      `External resource ${resource.resourceId} does not match its frozen owner profile`,
+    );
+  }
+  return {
+    executable: boundary.dockerExecutable,
+    args: ["rm", "--force", resource.resourceId],
+    cwd: path.dirname(manifest.artifacts.manifest),
+  };
 }
 
 function errorMessage(error: unknown): string {
@@ -1719,4 +2059,30 @@ function assertProcessCleanupProven(
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function assertDiskHeadroom(
+  target: string,
+  minimumFreeBytes: number,
+): Promise<void> {
+  let existing = target;
+  try {
+    await stat(existing);
+  } catch (error) {
+    if (!(
+      error instanceof Error &&
+      "code" in error &&
+      error.code === "ENOENT"
+    )) {
+      throw error;
+    }
+    existing = path.dirname(existing);
+  }
+  const filesystem = await statfs(existing);
+  const freeBytes = filesystem.bavail * filesystem.bsize;
+  if (freeBytes < minimumFreeBytes) {
+    throw new Error(
+      `Insufficient free disk for a new attempt: ${freeBytes} bytes available, ${minimumFreeBytes} required by owner profile`,
+    );
+  }
 }

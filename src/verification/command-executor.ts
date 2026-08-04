@@ -84,6 +84,9 @@ export async function executeCommand(input: {
   workspacePath: string;
   artifactDirectory: string;
   defaultTimeoutMs: number;
+  maximumTimeoutMs?: number;
+  maxLogBytes?: number;
+  cleanupTimeoutMs?: number;
   policy: ExecutionPolicy;
   signal: AbortSignal;
   onGuardianReady?: (identity: ProcessGuardianIdentity) => void | Promise<void>;
@@ -145,7 +148,16 @@ export async function executeCommand(input: {
         relativeCwd: input.command.cwd,
         identity: `${input.attemptId ?? "attempt"}-${input.phase}-${input.index}`,
       });
-      invocation = sandboxed.invocation;
+      invocation = {
+        ...sandboxed.invocation,
+        cleanup: sandboxed.invocation.cleanup
+          ? {
+              ...sandboxed.invocation.cleanup,
+              timeoutMs: input.cleanupTimeoutMs,
+              maxOutputBytes: input.maxLogBytes,
+            }
+          : undefined,
+      };
       boundaryEvidence = sandboxed.evidence;
       await input.onExternalResource?.(sandboxed.resource);
     } else {
@@ -182,7 +194,12 @@ export async function executeCommand(input: {
     const process = await runProcess(invocation, {
       stdoutPath: stdout,
       stderrPath: stderr,
-      timeoutMs: input.command.timeoutMs ?? input.defaultTimeoutMs,
+      timeoutMs: Math.min(
+        input.command.timeoutMs ?? input.defaultTimeoutMs,
+        input.maximumTimeoutMs ?? Number.MAX_SAFE_INTEGER,
+      ),
+      maxStdoutBytes: input.maxLogBytes,
+      maxStderrBytes: input.maxLogBytes,
       signal: input.signal,
       onGuardianReady: input.onGuardianReady,
     });

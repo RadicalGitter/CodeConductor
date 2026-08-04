@@ -646,6 +646,7 @@ function queueItemFixture(input: {
     dependsOnJobIds: [],
     createdAt: input.now,
     updatedAt: input.now,
+    automaticRetryCount: 0,
     attemptId: input.attemptId,
     dispatchOperationId: input.dispatchOperationId,
   };

@@ -53,6 +53,7 @@ export const queueItemSchema = z.object({
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   attemptId: z.string().min(1).optional(),
+  automaticRetryCount: z.number().int().nonnegative().default(0),
   completion: queueCompletionSchema.optional(),
   message: z.string().min(1).optional(),
 });

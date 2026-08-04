@@ -34,6 +34,37 @@ test("captures stdout and stderr without a shell", async () => {
   }
 });
 
+test("output floods are terminated and persisted logs never exceed their ceiling", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "conductor-output-limit-"));
+  const stdoutPath = path.join(root, "stdout.log");
+  const stderrPath = path.join(root, "stderr.log");
+  try {
+    const result = await runProcess(
+      {
+        executable: process.execPath,
+        args: ["-e", "process.stdout.write('x'.repeat(100_000))"],
+        cwd: root,
+      },
+      {
+        stdoutPath,
+        stderrPath,
+        timeoutMs: 5_000,
+        maxStdoutBytes: 1_024,
+        maxStderrBytes: 1_024,
+      },
+    );
+    expect(result.outputLimit).toMatchObject({
+      stream: "stdout",
+      limitBytes: 1_024,
+    });
+    expect((await readFile(stdoutPath)).byteLength).toBe(1_024);
+    expect((await readFile(stderrPath)).byteLength).toBeLessThanOrEqual(1_024);
+    expect(result.termination.status).toBe("proven");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 10_000);
+
 test("does not inherit arbitrary parent secrets unless explicitly injected", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "conductor-environment-"));
   const name = "CONDUCTOR_TEST_SECRET_CANARY";

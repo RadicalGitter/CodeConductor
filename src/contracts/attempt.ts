@@ -69,6 +69,13 @@ export const processExecutionResultSchema = z.object({
   signal: z.string().nullable(),
   timedOut: z.boolean(),
   cancelled: z.boolean(),
+  outputLimit: z
+    .object({
+      stream: z.enum(["stdout", "stderr"]),
+      limitBytes: z.number().int().positive(),
+      observedBytes: z.number().int().positive(),
+    })
+    .optional(),
   durationMs: z.number().int().nonnegative(),
   containment: processContainmentSchema.optional(),
   termination: processTerminationEvidenceSchema,
@@ -170,6 +177,7 @@ export const failureKindSchema = z.enum([
   "worker-exit",
   "proposal-capture-failed",
   "timeout",
+  "resource-limit",
   "cancelled",
   "orphaned",
   "composition-failed",

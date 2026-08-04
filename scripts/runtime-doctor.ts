@@ -1,8 +1,9 @@
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, statfs } from "node:fs/promises";
 import path from "node:path";
 
 import { createConductorRuntimeFromEnvironment } from "../src/mcp/runtime.js";
 import { parseEnvironmentList } from "../src/runtime/environment.js";
+import { RetentionManager } from "../src/retention/gc.js";
 
 type Check = {
   name: string;
@@ -35,6 +36,34 @@ try {
     kode?.available ? `available at ${kode.executable}` : "unavailable",
   );
   record("data-directory", true, runtime.conductor.store.root);
+  const filesystem = await statfs(runtime.conductor.store.root);
+  const freeDiskBytes = filesystem.bavail * filesystem.bsize;
+  record(
+    "disk-headroom",
+    freeDiskBytes >=
+      runtime.conductor.resourceProfile.limits.minimumFreeDiskBytes,
+    `${freeDiskBytes} free bytes; ${runtime.conductor.resourceProfile.limits.minimumFreeDiskBytes} required`,
+  );
+  const retention = new RetentionManager(runtime.conductor);
+  const [gc, gcActions] = await Promise.all([
+    retention.dryRun(),
+    retention.inspectActions(),
+  ]);
+  record(
+    "resource-profile",
+    true,
+    `${runtime.conductor.resourceProfile.profileId}; ${runtime.conductor.resourceProfile.limits.attemptTimeoutMs}ms attempt; ${runtime.conductor.resourceProfile.limits.maxPatchBytes} patch bytes; ${runtime.conductor.resourceProfile.limits.maxLogBytes} log bytes`,
+  );
+  record(
+    "retention-gc",
+    true,
+    `${gc.candidates.length} candidates; ${gc.totalEstimatedBytes} reclaimable bytes; dry-run only`,
+  );
+  record(
+    "gc-actions",
+    gcActions.pending.length === 0 && gcActions.failed.length === 0,
+    `${gcActions.pending.length} interrupted; ${gcActions.failed.length} failed; ${gcActions.completed.length} completed`,
+  );
   const sandboxes = runtime.conductor.sandboxProfiles.list();
   record(
     "sandbox-profiles",

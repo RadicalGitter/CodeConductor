@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { closeSync, openSync } from "node:fs";
+import { closeSync, openSync, writeSync } from "node:fs";
 
 const control = process.stdin;
 const EVENT_PREFIX = "\u001eCONDUCTOR_EVENT ";
@@ -10,6 +10,7 @@ let started = false;
 let buffer = "";
 let workerStdout;
 let workerStderr;
+let outputLimit;
 
 control.setEncoding("utf8");
 control.on("data", (chunk) => {
@@ -27,14 +28,17 @@ control.on("data", (chunk) => {
   }
   workerStdout = openSync(message.stdoutPath, "a");
   workerStderr = openSync(message.stderrPath, "a");
+  const limits = message.outputLimits ?? {};
   worker = spawn(message.invocation.executable, message.invocation.args, {
     cwd: message.invocation.cwd,
     env: message.invocation.env,
     shell: false,
     windowsHide: true,
     detached: process.platform !== "win32",
-    stdio: ["ignore", workerStdout, workerStderr],
+    stdio: ["ignore", "pipe", "pipe"],
   });
+  captureBounded(worker.stdout, workerStdout, "stdout", limits.stdoutBytes);
+  captureBounded(worker.stderr, workerStderr, "stderr", limits.stderrBytes);
   worker.once("spawn", () => {
     send({ type: "worker-spawn", nonce: message.nonce, pid: worker.pid });
   });
@@ -87,7 +91,34 @@ async function stop(reason) {
       }
     }
   }
+  closeWorkerLogs();
   finish(125);
+}
+
+function captureBounded(stream, descriptor, name, configuredLimit) {
+  const limit = Number.isSafeInteger(configuredLimit)
+    ? configuredLimit
+    : Number.MAX_SAFE_INTEGER;
+  let written = 0;
+  stream.on("data", (chunk) => {
+    if (stopping) return;
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    const remaining = Math.max(0, limit - written);
+    const accepted = Math.min(remaining, bytes.length);
+    if (accepted > 0) {
+      writeSync(descriptor, bytes, 0, accepted);
+      written += accepted;
+    }
+    if (bytes.length > remaining && !outputLimit) {
+      outputLimit = {
+        stream: name,
+        limitBytes: limit,
+        observedBytes: written + (bytes.length - accepted),
+      };
+      send({ type: "output-limit", ...outputLimit });
+      void stop("output-limit");
+    }
+  });
 }
 
 async function finishWorker(exitCode, signal) {

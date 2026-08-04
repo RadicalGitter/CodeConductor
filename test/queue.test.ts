@@ -159,6 +159,7 @@ test("single-owner lease and restart recovery prohibit duplicate orphan work", a
     await dispatcher.runUntilIdle();
     const recovered = await queue.read(enqueued.item.jobId);
     expect(recovered.status).toBe("completed");
+    expect(recovered.automaticRetryCount).toBe(1);
     expect(recovered.attemptId).not.toBe(reserved.attemptId);
     expect((await conductor.getAttempt(reserved.attemptId)).status).toBe(
       "cancelled",

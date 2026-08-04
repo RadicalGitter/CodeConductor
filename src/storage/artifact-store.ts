@@ -28,7 +28,12 @@ import {
   type CleanupEvidence,
   type CleanupRequirement,
 } from "../contracts/cleanup.js";
-import { jobContractSchema, type JobContract } from "../contracts/job.js";
+import {
+  jobContractSchema,
+  type JobContract,
+  type JobContractInput,
+} from "../contracts/job.js";
+import { assertResourceBudgetIntegrity } from "../contracts/resources.js";
 import {
   commitTransition,
   readLatestTransition,
@@ -68,8 +73,9 @@ export class ArtifactStore {
   }
 
   async reserveJob(
-    contract: JobContract,
+    input: JobContractInput,
   ): Promise<{ contract: JobContract; created: boolean }> {
+    const contract = jobContractSchema.parse(input);
     await this.initialize();
     const jobDirectory = this.jobDirectory(contract.jobId);
     const stagingDirectory = `${jobDirectory}.reserve-${process.pid}-${randomUUID()}`;
@@ -99,7 +105,11 @@ export class ArtifactStore {
   }
 
   async readJob(jobId: string): Promise<JobContract> {
-    return jobContractSchema.parse(await this.readJson(this.jobPath(jobId)));
+    const contract = jobContractSchema.parse(
+      await this.readJson(this.jobPath(jobId)),
+    );
+    assertResourceBudgetIntegrity(contract.resources);
+    return contract;
   }
 
   async reserveAttempt(
@@ -110,7 +120,11 @@ export class ArtifactStore {
     const attemptsRoot = this.attemptsRoot(contract.jobId);
     await mkdir(attemptsRoot, { recursive: true });
 
-    for (let ordinal = 1; ordinal <= 999_999; ordinal += 1) {
+    for (
+      let ordinal = 1;
+      ordinal <= contract.resources.maxAttemptsPerJob;
+      ordinal += 1
+    ) {
       const reservation = await this.reserveAttemptAt(
         contract,
         ordinal,
@@ -120,7 +134,9 @@ export class ArtifactStore {
       if (reservation.created) return reservation;
     }
 
-    throw new Error(`Attempt space exhausted for ${contract.jobId}`);
+    throw new Error(
+      `Attempt budget exhausted for ${contract.jobId}: maximum ${contract.resources.maxAttemptsPerJob}`,
+    );
   }
 
   async reserveInitialAttempt(

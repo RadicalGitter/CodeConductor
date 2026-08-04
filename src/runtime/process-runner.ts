@@ -1,6 +1,15 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  open,
+  readFile,
+  rename,
+  rm,
+  stat,
+  truncate,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
@@ -20,6 +29,7 @@ export interface ProcessInvocation {
     env?: Record<string, string>;
     allowMissingMessage?: string;
     timeoutMs?: number;
+    maxOutputBytes?: number;
   };
 }
 
@@ -57,6 +67,8 @@ export interface ProcessRunOptions {
   stdoutPath: string;
   stderrPath: string;
   timeoutMs: number;
+  maxStdoutBytes?: number;
+  maxStderrBytes?: number;
   signal?: AbortSignal;
   onSpawn?: (pid: number) => void | Promise<void>;
   onGuardianReady?: (identity: ProcessGuardianIdentity) => void | Promise<void>;
@@ -68,6 +80,11 @@ export interface ProcessExecutionResult {
   signal: NodeJS.Signals | null;
   timedOut: boolean;
   cancelled: boolean;
+  outputLimit?: {
+    stream: "stdout" | "stderr";
+    limitBytes: number;
+    observedBytes: number;
+  };
   durationMs: number;
   containment?: ProcessContainment;
   termination: ProcessTerminationEvidence;
@@ -147,6 +164,7 @@ export async function runProcess(
     let ownershipReady = process.platform !== "win32";
     let startScheduled = false;
     let treeCleanup: ProcessTerminationEvidence | undefined;
+    let outputLimit: ProcessExecutionResult["outputLimit"];
     let callbackChain = Promise.resolve();
     let callbackFailure: unknown;
     let stopControlWrite: Promise<void> | undefined;
@@ -201,6 +219,10 @@ export async function runProcess(
                   },
                   stdoutPath: options.stdoutPath,
                   stderrPath: options.stderrPath,
+                  outputLimits: {
+                    stdoutBytes: options.maxStdoutBytes,
+                    stderrBytes: options.maxStderrBytes,
+                  },
                 });
               })
               .catch(async (error) => {
@@ -224,6 +246,17 @@ export async function runProcess(
                 : "guardian-exit-unverified",
             event.detail,
           );
+        } else if (
+          event.type === "output-limit" &&
+          (event.stream === "stdout" || event.stream === "stderr") &&
+          typeof event.limitBytes === "number" &&
+          typeof event.observedBytes === "number"
+        ) {
+          outputLimit = {
+            stream: event.stream,
+            limitBytes: event.limitBytes,
+            observedBytes: event.observedBytes,
+          };
         } else if (event.type === "worker-spawn" && event.pid) {
           workerPid = event.pid;
           callbackChain = callbackChain.then(() =>
@@ -297,6 +330,10 @@ export async function runProcess(
                     },
                     stdoutPath: options.stdoutPath,
                     stderrPath: options.stderrPath,
+                    outputLimits: {
+                      stdoutBytes: options.maxStdoutBytes,
+                      stderrBytes: options.maxStderrBytes,
+                    },
                   })}\n`,
                 );
               })
@@ -345,6 +382,7 @@ export async function runProcess(
         ...result,
         timedOut,
         cancelled,
+        outputLimit,
         containment: guardianHost.containment(guardian.pid!),
         termination: finalTermination,
         cleanup,
@@ -360,6 +398,10 @@ export async function runProcess(
       rm(stopControlPath, { force: true }),
     ]);
     await Promise.allSettled([stdout.close(), stderr.close()]);
+    await Promise.all([
+      enforceFileCeiling(options.stdoutPath, options.maxStdoutBytes),
+      enforceFileCeiling(options.stderrPath, options.maxStderrBytes),
+    ]);
   }
 }
 
@@ -376,6 +418,9 @@ type GuardianEvent = {
   status?: string;
   method?: string;
   detail?: string;
+  stream?: string;
+  limitBytes?: number;
+  observedBytes?: number;
 };
 
 function readGuardianEvents(
@@ -479,11 +524,18 @@ async function runCleanupInvocation(
         stdoutPath,
         stderrPath,
         timeoutMs: invocation.timeoutMs ?? 24_000,
+        maxStdoutBytes: invocation.maxOutputBytes,
+        maxStderrBytes: invocation.maxOutputBytes,
       },
     );
     const stderr = await readFile(stderrPath, "utf8");
     if (result.timedOut) {
       throw new Error("External resource cleanup timed out");
+    }
+    if (result.outputLimit) {
+      throw new Error(
+        `External resource cleanup ${result.outputLimit.stream} exceeded ${result.outputLimit.limitBytes} bytes`,
+      );
     }
     if (result.termination.status !== "proven") {
       throw new Error(
@@ -644,4 +696,13 @@ function terminationEvidence(
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+async function enforceFileCeiling(
+  target: string,
+  maximum: number | undefined,
+): Promise<void> {
+  if (maximum !== undefined && (await stat(target)).size > maximum) {
+    await truncate(target, maximum);
+  }
 }

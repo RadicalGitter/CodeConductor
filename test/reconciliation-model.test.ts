@@ -208,6 +208,7 @@ function queue(
     dependsOnJobIds: [],
     createdAt: now,
     updatedAt: now,
+    automaticRetryCount: 0,
     dispatchOperationId,
     attemptId,
   };

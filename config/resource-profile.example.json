@@ -1,0 +1,23 @@
+{
+  "schema": "conductor.owner-resource-profile/v1",
+  "profileId": "overnight-local-v1",
+  "limits": {
+    "attemptTimeoutMs": 2700000,
+    "maxCommands": 32,
+    "maxAttemptsPerJob": 16,
+    "maxAutomaticRetries": 1,
+    "maxChangedPaths": 20,
+    "maxPatchBytes": 5242880,
+    "maxLogBytes": 10485760,
+    "maxArtifactBytes": 52428800,
+    "maxWorktreeBytes": 2147483648,
+    "maxLineageContributions": 32,
+    "maxExternalResources": 32,
+    "gitTimeoutMs": 60000,
+    "cleanupTimeoutMs": 30000,
+    "minimumFreeDiskBytes": 1073741824,
+    "terminalRetentionMs": 604800000,
+    "reviewedRetentionMs": 2592000000,
+    "gcProposalTtlMs": 900000
+  }
+}

@@ -18,6 +18,7 @@ import { SourceWatchStore } from "../sources/watch-store.js";
 import { sourceWatchRequestSchema } from "../contracts/source.js";
 import { reconciliationActionSchema } from "../contracts/reconcile.js";
 import { RuntimeReconciler } from "../reconcile/runtime-reconciler.js";
+import { RetentionManager } from "../retention/gc.js";
 
 export function createMcpServer(
   conductor: Conductor,
@@ -44,6 +45,33 @@ export function createMcpServer(
     name: "conductor",
     version: CONDUCTOR_VERSION,
   });
+  const retention = new RetentionManager(conductor);
+
+  server.registerTool(
+    "plan_retention_gc",
+    {
+      title: "Plan retention garbage collection",
+      description:
+        "Dry-run only. Classify every attempt as active, reviewable, retained, quarantined, or expired and return an evidence-bound, short-lived cleanup plan. Applying the plan remains an explicit owner operation outside the model tool surface.",
+      annotations: { readOnlyHint: true, idempotentHint: false },
+    },
+    async () =>
+      toolResult({
+        plan: await retention.dryRun(),
+        actions: await retention.inspectActions(),
+      }),
+  );
+
+  server.registerTool(
+    "get_resource_policy",
+    {
+      title: "Get owner resource policy",
+      description:
+        "Read the owner-controlled limits that will be frozen into newly prepared jobs. Existing jobs continue to use their own frozen resource budget.",
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    },
+    async () => toolResult({ profile: conductor.resourceProfile }),
+  );
 
   server.registerTool(
     "reconcile_runtime",

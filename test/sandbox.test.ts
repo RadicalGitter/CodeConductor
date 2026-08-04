@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { access, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -8,6 +8,7 @@ import type { JobContract } from "../src/contracts/job.js";
 import { Conductor } from "../src/orchestrator/conductor.js";
 import { DurableDispatcher } from "../src/queue/dispatcher.js";
 import { QueueStore } from "../src/queue/queue-store.js";
+import { resolveExecutablePath } from "../src/runtime/executable.js";
 import {
   buildSandboxedCommand,
   SandboxProfiles,
@@ -19,6 +20,7 @@ import { GitWorkspaceManager } from "../src/workspaces/git-workspace.js";
 import { createTestRepository, runTestJob } from "./helpers.js";
 
 const digest = "a".repeat(64);
+const nodeExecutable = resolveExecutablePath("node")!;
 
 test("external sandbox profiles freeze a least-authority Docker invocation", () => {
   const profiles = createProfiles();
@@ -37,7 +39,7 @@ test("external sandbox profiles freeze a least-authority Docker invocation", () 
     identity: "attempt-setup-0",
   });
 
-  expect(built.invocation.executable).toBe(process.execPath);
+  expect(built.invocation.executable).toBe(nodeExecutable);
   for (const required of [
     "--pull",
     "never",
@@ -142,10 +144,13 @@ test("orphan recovery releases every recorded external resource before retry", a
   );
   const cleanupCanary = path.join(dataRoot, "resource-released.txt");
   const store = new ArtifactStore(dataRoot);
+  const profiles = createProfiles();
   const conductor = new Conductor(
     store,
     new GitWorkspaceManager(store.workspaceRoot()),
     new WorkerRegistry([new SandboxFixtureAdapter("file-edit-only")]),
+    undefined,
+    profiles,
   );
 
   try {
@@ -154,9 +159,18 @@ test("orphan recovery releases every recorded external resource before retry", a
       repositoryPath: repository.root,
       adapterId: "sandbox-fixture",
       idempotencyKey: "sandbox-recovery",
+      executionBoundary: {
+        kind: "external-sandbox",
+        profileId: "generated-code",
+      },
     });
     const reserved = await conductor.reservePreparedAttempt(contract.jobId);
     const manifest = await conductor.getAttempt(reserved.attemptId);
+    await writeFile(
+      path.join(path.dirname(manifest.artifacts.manifest), "rm"),
+      `require("node:fs").writeFileSync(${JSON.stringify(cleanupCanary)}, "released")`,
+      "utf8",
+    );
     const claimed = await claimAttemptForTest(store, manifest);
     const preparing = await store.transitionAttempt(claimed, {
       status: "preparing",
@@ -182,17 +196,17 @@ test("orphan recovery releases every recorded external resource before retry", a
           schema: "conductor.external-resource/v1",
           resourceId: "conductor-recovery-canary",
           driver: "docker",
-          profileId: "test",
-          profileFingerprint: "b".repeat(64),
-          image: `example.invalid/test@sha256:${digest}`,
+          profileId: "generated-code",
+          profileFingerprint:
+            contract.execution.boundary.kind === "external-sandbox"
+              ? contract.execution.boundary.profileFingerprint
+              : "unreachable",
+          image: `example.invalid/conductor-test@sha256:${digest}`,
           status: "active",
           registeredAt: new Date().toISOString(),
           cleanup: {
-            executable: process.execPath,
-            args: [
-              "-e",
-              `require("node:fs").writeFileSync(${JSON.stringify(cleanupCanary)}, "released")`,
-            ],
+            executable: "Z:\\untrusted\\cleanup.exe",
+            args: ["--must-not-run"],
             cwd: dataRoot,
           },
         },
@@ -270,10 +284,13 @@ test("manual retry releases durable resources and fails closed when cleanup fail
   const dataRoot = await mkdtemp(path.join(os.tmpdir(), "conductor-retry-"));
   const cleanupCanary = path.join(dataRoot, "retry-resource-released.txt");
   const store = new ArtifactStore(dataRoot);
+  const profiles = createProfiles();
   const conductor = new Conductor(
     store,
     new GitWorkspaceManager(store.workspaceRoot()),
     new WorkerRegistry([new SandboxFixtureAdapter("file-edit-only")]),
+    undefined,
+    profiles,
   );
   const queue = new QueueStore(store);
   const dispatcher = new DurableDispatcher(conductor, queue, {
@@ -288,24 +305,26 @@ test("manual retry releases durable resources and fails closed when cleanup fail
       repositoryPath: repository.root,
       adapterId: "sandbox-fixture",
       idempotencyKey: "sandbox-manual-retry",
+      executionBoundary: {
+        kind: "external-sandbox",
+        profileId: "generated-code",
+      },
     });
     const reserved = await conductor.reservePreparedAttempt(first.item.jobId);
     const manifest = await conductor.getAttempt(reserved.attemptId);
+    await writeFile(
+      path.join(path.dirname(manifest.artifacts.manifest), "rm"),
+      `require("node:fs").writeFileSync(${JSON.stringify(cleanupCanary)}, "released")`,
+      "utf8",
+    );
+    const firstContract = await store.readJob(first.item.jobId);
     const claimed = await claimAttemptForTest(store, manifest);
     await store.transitionAttempt(claimed, {
       status: "failed",
       finishedAt: new Date().toISOString(),
       verificationStatus: "ineligible",
       externalResources: [
-        resource(
-          "conductor-retry-canary",
-          process.execPath,
-          [
-            "-e",
-            `require("node:fs").writeFileSync(${JSON.stringify(cleanupCanary)}, "released")`,
-          ],
-          dataRoot,
-        ),
+        boundResource(firstContract, "conductor-retry-canary", dataRoot),
       ],
     });
     const firstDispatching = await queue.update(first.item, {
@@ -337,23 +356,28 @@ test("manual retry releases durable resources and fails closed when cleanup fail
       repositoryPath: repository.root,
       adapterId: "sandbox-fixture",
       idempotencyKey: "sandbox-failed-cleanup",
+      executionBoundary: {
+        kind: "external-sandbox",
+        profileId: "generated-code",
+      },
     });
     const secondReserved = await conductor.reservePreparedAttempt(
       second.item.jobId,
     );
     const secondManifest = await conductor.getAttempt(secondReserved.attemptId);
+    await writeFile(
+      path.join(path.dirname(secondManifest.artifacts.manifest), "rm"),
+      "process.stderr.write('cleanup denied'); process.exit(7)",
+      "utf8",
+    );
+    const secondContract = await store.readJob(second.item.jobId);
     const secondClaimed = await claimAttemptForTest(store, secondManifest);
     await store.transitionAttempt(secondClaimed, {
       status: "failed",
       finishedAt: new Date().toISOString(),
       verificationStatus: "ineligible",
       externalResources: [
-        resource(
-          "conductor-failed-cleanup",
-          process.execPath,
-          ["-e", "process.stderr.write('cleanup denied'); process.exit(7)"],
-          dataRoot,
-        ),
+        boundResource(secondContract, "conductor-failed-cleanup", dataRoot),
       ],
     });
     const secondDispatching = await queue.update(second.item, {
@@ -487,7 +511,7 @@ function createProfiles(): SandboxProfiles {
   return new SandboxProfiles(
     {
       schema: "conductor.sandbox-profiles/v1",
-      dockerExecutable: process.execPath,
+      dockerExecutable: nodeExecutable,
       profiles: {
         "generated-code": {
           image: `example.invalid/conductor-test@sha256:${digest}`,
@@ -521,6 +545,27 @@ function resource(
     status: "active" as const,
     registeredAt: new Date().toISOString(),
     cleanup: { executable, args, cwd },
+  };
+}
+
+function boundResource(contract: JobContract, resourceId: string, cwd: string) {
+  if (contract.execution.boundary.kind !== "external-sandbox") {
+    throw new Error("Expected a frozen external sandbox contract");
+  }
+  return {
+    schema: "conductor.external-resource/v1" as const,
+    resourceId,
+    driver: "docker" as const,
+    profileId: contract.execution.boundary.profileId,
+    profileFingerprint: contract.execution.boundary.profileFingerprint,
+    image: contract.execution.boundary.image,
+    status: "active" as const,
+    registeredAt: new Date().toISOString(),
+    cleanup: {
+      executable: "Z:\\untrusted\\cleanup.exe",
+      args: ["--must-not-run"],
+      cwd,
+    },
   };
 }
 

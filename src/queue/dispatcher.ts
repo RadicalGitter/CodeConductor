@@ -469,11 +469,26 @@ export class DurableDispatcher {
         item.attemptId,
       );
       if (recovery.disposition === "safe-to-retry") {
+        const contract = await this.conductor.store.readJob(item.jobId);
+        if (
+          item.status !== "cancelling" &&
+          item.automaticRetryCount >= contract.resources.maxAutomaticRetries
+        ) {
+          await this.queue.update(item, {
+            status: "needs-input",
+            message: `Automatic retry budget exhausted after ${item.automaticRetryCount} retries; owner review is required`,
+          });
+          continue;
+        }
         await this.queue.update(item, {
           status: item.status === "cancelling" ? "cancelled" : "queued",
           dispatchOperationId: undefined,
           attemptId: item.status === "cancelling" ? item.attemptId : undefined,
           completion: undefined,
+          automaticRetryCount:
+            item.status === "cancelling"
+              ? item.automaticRetryCount
+              : item.automaticRetryCount + 1,
           message:
             item.status === "cancelling"
               ? `Recovered and cancelled orphan ${item.attemptId}`

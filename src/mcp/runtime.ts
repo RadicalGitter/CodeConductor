@@ -15,6 +15,7 @@ import { ContractSourcePoller } from "../sources/poller.js";
 import { SourceWatchStore } from "../sources/watch-store.js";
 import { SandboxProfiles } from "../sandbox/docker.js";
 import { RuntimeReconciler } from "../reconcile/runtime-reconciler.js";
+import { loadOwnerResourceProfileFromEnvironment } from "../contracts/resources.js";
 
 export function createConductorFromEnvironment(): Conductor {
   return createConductorRuntimeFromEnvironment().conductor;
@@ -44,6 +45,7 @@ export function createConductorRuntimeFromEnvironment(): {
       allowedEnvironmentNames: profiles.environmentNames(),
     }),
     sandboxProfiles,
+    loadOwnerResourceProfileFromEnvironment(),
   );
   const queue = new QueueStore(store);
   const dispatcher = new DurableDispatcher(conductor, queue, {

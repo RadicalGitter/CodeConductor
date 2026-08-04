@@ -600,6 +600,7 @@ function queueItem(
     dependsOnJobIds: [],
     createdAt: now,
     updatedAt: now,
+    automaticRetryCount: 0,
     ...rest,
   };
 }

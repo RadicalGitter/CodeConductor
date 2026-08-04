@@ -1,17 +1,20 @@
-import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, realpath, rm, stat } from "node:fs/promises";
 import path from "node:path";
 
 import type { ProposalContribution } from "../contracts/attempt.js";
-import { selectParentEnvironment } from "../runtime/environment.js";
 import { resolveExecutablePath } from "../runtime/executable.js";
+import { isolatedGitEnvironment, runBoundedGit } from "../runtime/git.js";
 import { runProcess } from "../runtime/process-runner.js";
 
 export interface GitWorkspace {
   path: string;
   repositoryRoot: string;
   baseRevision: string;
+  gitTimeoutMs?: number;
+  maxGitOutputBytes?: number;
+  cleanupTimeoutMs?: number;
+  maxPatchBytes?: number;
 }
 
 export class GitWorkspaceManager {
@@ -24,24 +27,25 @@ export class GitWorkspaceManager {
   async inspectRepository(
     repositoryPath: string,
     baseRef: string,
+    limits: { gitTimeoutMs?: number; maxGitOutputBytes?: number } = {},
   ): Promise<{
     root: string;
     revision: string;
   }> {
     const requested = await realpath(path.resolve(repositoryPath));
     const root = path.resolve(
-      await git(requested, ["rev-parse", "--show-toplevel"]),
+      await git(requested, ["rev-parse", "--show-toplevel"], limits),
     );
     if (!samePath(requested, root)) {
       throw new Error(
         `Repository path must be its Git root: expected ${root}, received ${requested}`,
       );
     }
-    const revision = await git(root, [
-      "rev-parse",
-      "--verify",
-      `${baseRef}^{commit}`,
-    ]);
+    const revision = await git(
+      root,
+      ["rev-parse", "--verify", `${baseRef}^{commit}`],
+      limits,
+    );
     return { root, revision };
   }
 
@@ -49,20 +53,22 @@ export class GitWorkspaceManager {
     repositoryRoot: string;
     baseRevision: string;
     attemptId: string;
+    gitTimeoutMs?: number;
+    maxGitOutputBytes?: number;
+    cleanupTimeoutMs?: number;
+    maxPatchBytes?: number;
   }): Promise<GitWorkspace> {
     const target = this.targetPath(input.attemptId);
     await mkdir(this.workspaceRoot, { recursive: true });
     if (await exists(target))
       throw new Error(`Workspace already exists: ${target}`);
 
-    await git(input.repositoryRoot, [
-      "worktree",
-      "add",
-      "--detach",
-      target,
-      input.baseRevision,
-    ]);
-    const actualRevision = await git(target, ["rev-parse", "HEAD"]);
+    await git(
+      input.repositoryRoot,
+      ["worktree", "add", "--detach", target, input.baseRevision],
+      input,
+    );
+    const actualRevision = await git(target, ["rev-parse", "HEAD"], input);
     if (actualRevision !== input.baseRevision) {
       throw new Error(
         `Worktree revision mismatch: expected ${input.baseRevision}, received ${actualRevision}`,
@@ -73,18 +79,24 @@ export class GitWorkspaceManager {
       path: target,
       repositoryRoot: input.repositoryRoot,
       baseRevision: actualRevision,
+      gitTimeoutMs: input.gitTimeoutMs,
+      maxGitOutputBytes: input.maxGitOutputBytes,
+      cleanupTimeoutMs: input.cleanupTimeoutMs,
+      maxPatchBytes: input.maxPatchBytes,
     };
   }
 
   async remove(workspace: GitWorkspace): Promise<void> {
     const expected = this.assertManagedPath(workspace.path);
-    const deadline = Date.now() + 30_000;
+    const deadline = Date.now() + (workspace.cleanupTimeoutMs ?? 30_000);
     if (await exists(expected)) {
       await boundedCleanupGit(
         workspace.repositoryRoot,
         ["worktree", "remove", "--force", expected],
         this.workspaceRoot,
         deadline,
+        workspace.gitTimeoutMs,
+        workspace.maxGitOutputBytes,
       );
     }
     await boundedCleanupGit(
@@ -92,6 +104,8 @@ export class GitWorkspaceManager {
       ["worktree", "prune"],
       this.workspaceRoot,
       deadline,
+      workspace.gitTimeoutMs,
+      workspace.maxGitOutputBytes,
     );
   }
 
@@ -100,7 +114,11 @@ export class GitWorkspaceManager {
     contributions: ProposalContribution[],
   ): Promise<GitWorkspace> {
     if (contributions.length === 0) return workspace;
-    const actualRevision = await git(workspace.path, ["rev-parse", "HEAD"]);
+    const actualRevision = await git(
+      workspace.path,
+      ["rev-parse", "HEAD"],
+      workspace,
+    );
     if (actualRevision !== workspace.baseRevision) {
       throw new Error(
         `Composition workspace moved from ${workspace.baseRevision} to ${actualRevision}`,
@@ -109,6 +127,15 @@ export class GitWorkspaceManager {
 
     try {
       for (const contribution of contributions) {
+        const recordedPatch = await stat(contribution.patchPath);
+        if (
+          workspace.maxPatchBytes !== undefined &&
+          recordedPatch.size > workspace.maxPatchBytes
+        ) {
+          throw new Error(
+            `Proposal patch for ${contribution.attemptId} exceeds the child budget`,
+          );
+        }
         const patch = await readFile(contribution.patchPath);
         if (patch.byteLength !== contribution.patchBytes) {
           throw new Error(
@@ -134,11 +161,11 @@ export class GitWorkspaceManager {
             "--whitespace=nowarn",
             "-",
           ],
-          { input: patch },
+          { ...workspace, input: patch },
         );
       }
 
-      const tree = await git(workspace.path, ["write-tree"]);
+      const tree = await git(workspace.path, ["write-tree"], workspace);
       const message = [
         "Conductor proposal-only composition",
         "",
@@ -161,12 +188,21 @@ export class GitWorkspaceManager {
             GIT_COMMITTER_EMAIL: "conductor@example.invalid",
             GIT_COMMITTER_DATE: "2000-01-01T00:00:00 +0000",
           },
+          ...workspace,
         },
       );
-      await git(workspace.path, ["reset", "--hard", derivedRevision]);
+      await git(
+        workspace.path,
+        ["reset", "--hard", derivedRevision],
+        workspace,
+      );
       return { ...workspace, baseRevision: derivedRevision };
     } catch (error) {
-      await git(workspace.path, ["reset", "--hard", workspace.baseRevision]);
+      await git(
+        workspace.path,
+        ["reset", "--hard", workspace.baseRevision],
+        workspace,
+      );
       throw new Error(`Proposal composition failed: ${errorMessage(error)}`);
     }
   }
@@ -193,6 +229,8 @@ async function boundedCleanupGit(
   args: string[],
   artifactRoot: string,
   deadline: number,
+  configuredTimeoutMs = 30_000,
+  maxOutputBytes = 10 * 1024 * 1024,
 ): Promise<void> {
   const remainingMs = deadline - Date.now();
   if (remainingMs <= 5_000) {
@@ -206,11 +244,24 @@ async function boundedCleanupGit(
   const stderrPath = path.join(artifactDirectory, `${identity}.stderr.log`);
   try {
     const result = await runProcess(
-      { executable, args: ["-C", cwd, ...args], cwd },
+      {
+        executable,
+        args: [
+          "-c",
+          `core.hooksPath=${path.join(artifactRoot, ".disabled-git-hooks")}`,
+          "-C",
+          cwd,
+          ...args,
+        ],
+        cwd,
+        env: isolatedGitEnvironment(),
+      },
       {
         stdoutPath,
         stderrPath,
-        timeoutMs: Math.min(10_000, remainingMs - 5_000),
+        timeoutMs: Math.min(configuredTimeoutMs, remainingMs - 5_000),
+        maxStdoutBytes: maxOutputBytes,
+        maxStderrBytes: maxOutputBytes,
       },
     );
     const stderr = await readFile(stderrPath, "utf8");
@@ -242,31 +293,16 @@ async function git(
   options: {
     input?: Buffer;
     env?: Record<string, string>;
+    gitTimeoutMs?: number;
+    maxGitOutputBytes?: number;
   } = {},
 ): Promise<string> {
-  const child = spawn("git", ["-C", cwd, ...args], {
-    shell: false,
-    windowsHide: true,
-    env: { ...selectParentEnvironment(), ...options.env },
-    stdio: [options.input ? "pipe" : "ignore", "pipe", "pipe"],
+  return runBoundedGit(cwd, args, {
+    input: options.input,
+    environment: options.env,
+    timeoutMs: options.gitTimeoutMs,
+    maxOutputBytes: options.maxGitOutputBytes,
   });
-  let stdout = "";
-  let stderr = "";
-  child.stdout!.setEncoding("utf8");
-  child.stderr!.setEncoding("utf8");
-  child.stdout!.on("data", (chunk) => (stdout += chunk));
-  child.stderr!.on("data", (chunk) => (stderr += chunk));
-  if (options.input) child.stdin!.end(options.input);
-  const exitCode = await new Promise<number>((resolve, reject) => {
-    child.once("error", reject);
-    child.once("close", (code) => resolve(code ?? -1));
-  });
-  if (exitCode !== 0) {
-    throw new Error(
-      `git ${args[0] ?? ""} failed (${exitCode}): ${stderr.trim()}`,
-    );
-  }
-  return stdout.trim();
 }
 
 function errorMessage(error: unknown): string {

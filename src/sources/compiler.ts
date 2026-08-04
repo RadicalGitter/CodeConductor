@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import path from "node:path";
 
 import { fingerprint, type JobRequest } from "../contracts/job.js";
@@ -8,7 +7,7 @@ import {
   sourceScanRequestSchema,
   type CompiledSourceContract,
 } from "../contracts/source.js";
-import { selectParentEnvironment } from "../runtime/environment.js";
+import { runBoundedGit } from "../runtime/git.js";
 import { GitWorkspaceManager } from "../workspaces/git-workspace.js";
 import { CommandProfiles } from "./command-profiles.js";
 
@@ -240,36 +239,15 @@ function captureGit(
   args: string[],
   maxBytes: number,
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn("git", ["-C", cwd, ...args], {
-      shell: false,
-      windowsHide: true,
-      env: selectParentEnvironment(),
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    const chunks: Buffer[] = [];
-    let bytes = 0;
-    let stderr = "";
-    child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (chunk) => (stderr += chunk));
-    child.stdout.on("data", (chunk: Buffer) => {
-      bytes += chunk.length;
-      if (bytes > maxBytes) {
-        child.kill();
-        return;
-      }
-      chunks.push(chunk);
-    });
-    child.once("error", reject);
-    child.once("close", (code) => {
-      if (bytes > maxBytes) {
-        reject(new OutputLimitError(`Git output exceeded ${maxBytes} bytes`));
-      } else if (code === 0) {
-        resolve(Buffer.concat(chunks).toString("utf8"));
-      } else {
-        reject(new Error(`git ${args[0]} failed (${code}): ${stderr.trim()}`));
-      }
-    });
+  return runBoundedGit(cwd, args, {
+    maxOutputBytes: maxBytes,
+    timeoutMs: 60_000,
+    trim: false,
+  }).catch((error: unknown) => {
+    if (errorMessage(error).includes("output exceeded")) {
+      throw new OutputLimitError(`Git output exceeded ${maxBytes} bytes`);
+    }
+    throw error;
   });
 }
 

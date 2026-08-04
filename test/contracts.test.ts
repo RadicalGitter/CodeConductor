@@ -29,8 +29,10 @@ test("freezes authority and exact repository evidence into a versioned contract"
     },
   );
 
-  expect(contract.schema).toBe("conductor.job/v1");
+  expect(contract.schema).toBe("conductor.job/v2");
   expect(contract.authority).toBe("proposal-only");
   expect(contract.repository.baseRevision).toBe("a".repeat(40));
   expect(contract.jobId).toMatch(/^job_[a-f0-9]{20}$/);
+  expect(contract.resources.profileId).toBe("overnight-local-v1");
+  expect(contract.resources.maxPatchBytes).toBe(5 * 1024 * 1024);
 });

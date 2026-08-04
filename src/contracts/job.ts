@@ -2,6 +2,13 @@ import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { z } from "zod/v4";
 
+import {
+  DEFAULT_OWNER_RESOURCE_PROFILE,
+  freezeResourceBudget,
+  resourceBudgetSchema,
+  type OwnerResourceProfile,
+} from "./resources.js";
+
 const environmentNameSchema = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/);
 export const relativePathSchema = z.string().min(1).refine(isSafeRelativePath, {
   message: "must be a relative path without traversal or glob syntax",
@@ -90,7 +97,7 @@ export const jobRequestSchema = z.object({
 export type JobRequest = z.infer<typeof jobRequestSchema>;
 
 export const jobContractSchema = z.object({
-  schema: z.literal("conductor.job/v1"),
+  schema: z.enum(["conductor.job/v1", "conductor.job/v2"]),
   jobId: z.string().min(1),
   requestFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
   idempotencyKey: z.string().min(1),
@@ -119,10 +126,14 @@ export const jobContractSchema = z.object({
       kind: "host-worktree",
     }),
   }),
+  resources: resourceBudgetSchema.default(
+    freezeResourceBudget(DEFAULT_OWNER_RESOURCE_PROFILE),
+  ),
   authority: z.literal("proposal-only"),
 });
 
 export type JobContract = z.infer<typeof jobContractSchema>;
+export type JobContractInput = z.input<typeof jobContractSchema>;
 
 export interface FreezeJobRequestOptions {
   repositoryRoot: string;
@@ -130,6 +141,7 @@ export interface FreezeJobRequestOptions {
   now?: Date;
   generatedId?: string;
   sandboxBinding?: z.infer<typeof externalSandboxBindingSchema>;
+  resourceProfile?: OwnerResourceProfile;
 }
 
 export function freezeJobRequest(
@@ -157,7 +169,7 @@ export function freezeJobRequest(
   }
 
   return jobContractSchema.parse({
-    schema: "conductor.job/v1",
+    schema: "conductor.job/v2",
     jobId,
     requestFingerprint,
     idempotencyKey,
@@ -180,10 +192,18 @@ export function freezeJobRequest(
     setupCommands: request.setupCommands,
     acceptanceCommands: request.acceptanceCommands,
     execution: {
-      timeoutMs: request.timeoutMs,
+      timeoutMs: Math.min(
+        request.timeoutMs,
+        (options.resourceProfile ?? DEFAULT_OWNER_RESOURCE_PROFILE).limits
+          .attemptTimeoutMs,
+      ),
       retainWorkspace: request.retainWorkspace,
       boundary,
     },
+    resources: freezeResourceBudget(
+      options.resourceProfile ?? DEFAULT_OWNER_RESOURCE_PROFILE,
+      request.timeoutMs,
+    ),
     authority: "proposal-only",
   });
 }
