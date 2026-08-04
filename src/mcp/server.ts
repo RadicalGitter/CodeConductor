@@ -61,7 +61,7 @@ export function createMcpServer(
     {
       title: "Apply typed reconciliation action",
       description:
-        "Apply one exact evidence-bound owner action returned by reconcile_runtime. The action quarantines unreadable lease evidence; it cannot force-complete work or accept proposals.",
+        "Apply one exact evidence-bound owner action returned by reconcile_runtime. Actions may quarantine unreadable lease evidence, repair queue routing, or invoke cleanup-gated orphan recovery; they cannot force-complete work, rewrite terminal attempt evidence, or accept proposals.",
       inputSchema: reconciliationActionSchema.shape,
       annotations: {
         readOnlyHint: false,

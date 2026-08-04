@@ -15,7 +15,7 @@ export const leaseInspectionStateSchema = z.enum([
 
 export type LeaseInspectionState = z.infer<typeof leaseInspectionStateSchema>;
 
-export const reconciliationActionProposalSchema = z.object({
+export const leaseReconciliationActionProposalSchema = z.object({
   schema: z.literal("conductor.reconciliation-action-proposal/v1"),
   kind: z.literal("quarantine-unreadable-dispatcher-lease"),
   observedState: z.enum(["incomplete", "corrupt"]),
@@ -24,8 +24,93 @@ export const reconciliationActionProposalSchema = z.object({
   description: z.string().min(1).max(1_000),
 });
 
+const runtimeActionProposalBase = z.object({
+  schema: z.literal("conductor.reconciliation-action-proposal/v2"),
+  jobId: z.string().min(1),
+  evidenceToken: z.string().regex(/^[a-f0-9]{64}$/),
+  requiredAuthority: z.literal("owner"),
+  description: z.string().min(1).max(1_000),
+});
+
+export const resetQueueItemActionProposalSchema =
+  runtimeActionProposalBase.extend({
+    kind: z.literal("reset-abandoned-queue-item"),
+    expectedQueueRevision: z.number().int().nonnegative(),
+    observedStatus: z.enum(["queued", "dispatching"]),
+  });
+
+export const quarantineQueueItemActionProposalSchema =
+  runtimeActionProposalBase.extend({
+    kind: z.literal("quarantine-queue-item"),
+    expectedQueueRevision: z.number().int().nonnegative(),
+    observedStatus: z.enum([
+      "queued",
+      "dispatching",
+      "running",
+      "cancelling",
+      "completed",
+      "failed",
+      "needs-input",
+      "cancelled",
+    ]),
+    observedAttemptId: z.string().min(1).optional(),
+  });
+
+export const bindQueueAttemptActionProposalSchema =
+  runtimeActionProposalBase.extend({
+    kind: z.literal("bind-queue-to-attempt"),
+    expectedQueueRevision: z.number().int().nonnegative(),
+    attemptId: z.string().min(1),
+    expectedAttemptRevision: z.number().int().nonnegative(),
+    dispatchOperationId: z.string().uuid(),
+  });
+
+export const synchronizeQueueActionProposalSchema =
+  runtimeActionProposalBase.extend({
+    kind: z.literal("synchronize-queue-from-terminal-attempt"),
+    expectedQueueRevision: z.number().int().nonnegative(),
+    attemptId: z.string().min(1),
+    expectedAttemptRevision: z.number().int().nonnegative(),
+    expectedCleanupRevision: z.number().int().nonnegative(),
+  });
+
+export const recoverAttemptActionProposalSchema =
+  runtimeActionProposalBase.extend({
+    kind: z.literal("recover-interrupted-attempt"),
+    attemptId: z.string().min(1),
+    expectedAttemptRevision: z.number().int().nonnegative(),
+    expectedCleanupRevision: z.number().int().nonnegative(),
+  });
+
+export const runtimeReconciliationActionProposalSchema = z.discriminatedUnion(
+  "kind",
+  [
+    resetQueueItemActionProposalSchema,
+    quarantineQueueItemActionProposalSchema,
+    bindQueueAttemptActionProposalSchema,
+    synchronizeQueueActionProposalSchema,
+    recoverAttemptActionProposalSchema,
+  ],
+);
+
+export const runtimeReconciliationActionKindSchema = z.enum([
+  "reset-abandoned-queue-item",
+  "quarantine-queue-item",
+  "bind-queue-to-attempt",
+  "synchronize-queue-from-terminal-attempt",
+  "recover-interrupted-attempt",
+]);
+
+export const reconciliationActionProposalSchema = z.union([
+  leaseReconciliationActionProposalSchema,
+  runtimeReconciliationActionProposalSchema,
+]);
+
 export type ReconciliationActionProposal = z.infer<
   typeof reconciliationActionProposalSchema
+>;
+export type RuntimeReconciliationActionProposal = z.infer<
+  typeof runtimeReconciliationActionProposalSchema
 >;
 
 export const reconciliationActionSchema = z.object({
@@ -39,6 +124,15 @@ export const reconciliationActionSchema = z.object({
 });
 
 export type ReconciliationAction = z.infer<typeof reconciliationActionSchema>;
+
+export const leaseReconciliationActionSchema =
+  reconciliationActionSchema.extend({
+    proposal: leaseReconciliationActionProposalSchema,
+  });
+
+export type LeaseReconciliationAction = z.infer<
+  typeof leaseReconciliationActionSchema
+>;
 
 export const reconciliationMutexSchema = z.object({
   schema: z.literal("conductor.reconciliation-mutex/v1"),
@@ -70,7 +164,7 @@ export const leaseInspectionSchema = z.object({
   lease: dispatcherLeaseSchema.optional(),
   automaticAction: z.enum(["create", "wait", "recover-dead-owner", "none"]),
   detail: z.string().min(1),
-  ownerAction: reconciliationActionProposalSchema.optional(),
+  ownerAction: leaseReconciliationActionProposalSchema.optional(),
 });
 
 export type LeaseInspection = z.infer<typeof leaseInspectionSchema>;
@@ -92,6 +186,33 @@ export const leaseEvidenceRecordSchema = z.object({
 
 export type LeaseEvidenceRecord = z.infer<typeof leaseEvidenceRecordSchema>;
 
+export const runtimeReconciliationEvidenceSchema = z.object({
+  schema: z.literal("conductor.runtime-reconciliation-evidence/v1"),
+  evidenceId: z.string().uuid(),
+  operationId: z.string().regex(/^[a-f0-9]{64}$/),
+  actionKind: runtimeReconciliationActionKindSchema,
+  disposition: z.enum(["applied", "blocked"]),
+  recordedAt: z.string().datetime(),
+  beforeEvidenceToken: z.string().regex(/^[a-f0-9]{64}$/),
+  detail: z.string().min(1).max(4_000),
+  actionPath: z.string().min(1),
+  resultPath: z.string().min(1),
+  queueRevision: z.number().int().nonnegative().optional(),
+  attemptRevision: z.number().int().nonnegative().optional(),
+  cleanupRevision: z.number().int().nonnegative().optional(),
+});
+
+export type RuntimeReconciliationEvidence = z.infer<
+  typeof runtimeReconciliationEvidenceSchema
+>;
+
+export const reconciliationActionIntentSchema = z.object({
+  schema: z.literal("conductor.reconciliation-action-intent/v1"),
+  operationId: z.string().regex(/^[a-f0-9]{64}$/),
+  recordedAt: z.string().datetime(),
+  action: reconciliationActionSchema,
+});
+
 export const reconciliationIssueSchema = z.object({
   issueId: z.string().regex(/^[a-f0-9]{16}$/),
   kind: z.enum([
@@ -105,6 +226,12 @@ export const reconciliationIssueSchema = z.object({
     "dispatch-operation-mismatch",
     "terminal-queue-nonterminal-attempt",
     "unreferenced-nonterminal-attempt",
+    "queue-shape-invalid",
+    "queue-attempt-job-mismatch",
+    "queue-completion-mismatch",
+    "active-queue-terminal-attempt",
+    "ambiguous-dispatch-attempts",
+    "inactive-owner-nonterminal-attempt",
   ]),
   severity: z.enum(["warning", "blocked"]),
   summary: z.string().min(1),
@@ -116,6 +243,10 @@ export const reconciliationIssueSchema = z.object({
     "owner-action",
     "runtime-restart",
   ]),
+  actionEvidenceToken: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
 });
 
 export type ReconciliationIssue = z.infer<typeof reconciliationIssueSchema>;
@@ -136,7 +267,10 @@ export type RuntimeReconciliationReport = z.infer<
 export const reconciliationApplyResultSchema = z.object({
   schema: z.literal("conductor.reconciliation-result/v1"),
   action: reconciliationActionSchema,
-  evidence: leaseEvidenceRecordSchema,
+  evidence: z.union([
+    leaseEvidenceRecordSchema,
+    runtimeReconciliationEvidenceSchema,
+  ]),
   report: runtimeReconciliationReportSchema,
 });
 

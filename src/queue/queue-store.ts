@@ -14,12 +14,12 @@ import type { JobContract } from "../contracts/job.js";
 import {
   leaseEvidenceRecordSchema,
   leaseInspectionSchema,
-  reconciliationActionSchema,
+  leaseReconciliationActionSchema,
   reconciliationMutexEvidenceSchema,
   reconciliationMutexSchema,
   type LeaseEvidenceRecord,
   type LeaseInspection,
-  type ReconciliationAction,
+  type LeaseReconciliationAction,
   type ReconciliationActionProposal,
   type ReconciliationMutex,
 } from "../contracts/reconcile.js";
@@ -166,6 +166,30 @@ export class QueueStore {
   }
 
   async update(item: QueueItem, patch: Partial<QueueItem>): Promise<QueueItem> {
+    return this.commitQueueUpdate(item, patch, (current, updated) =>
+      assertQueueTransition(current.status, updated.status),
+    );
+  }
+
+  async reconcile(
+    item: QueueItem,
+    patch: Partial<QueueItem>,
+    actionKind:
+      | "reset-abandoned-queue-item"
+      | "quarantine-queue-item"
+      | "bind-queue-to-attempt"
+      | "synchronize-queue-from-terminal-attempt",
+  ): Promise<QueueItem> {
+    return this.commitQueueUpdate(item, patch, (current, updated) =>
+      assertQueueReconciliationTransition(actionKind, current, updated),
+    );
+  }
+
+  private async commitQueueUpdate(
+    item: QueueItem,
+    patch: Partial<QueueItem>,
+    validateTransition: (current: QueueItem, updated: QueueItem) => void,
+  ): Promise<QueueItem> {
     const current = await this.read(item.jobId);
     if (
       current.revision !== item.revision ||
@@ -186,7 +210,7 @@ export class QueueStore {
       revision: current.revision + 1,
       updatedAt: new Date().toISOString(),
     });
-    assertQueueTransition(current.status, updated.status);
+    validateTransition(current, updated);
     await commitTransition({
       recordKind: "queue-item",
       recordId: current.jobId,
@@ -425,11 +449,11 @@ export class QueueStore {
   }
 
   async quarantineUnreadableLease(
-    input: ReconciliationAction,
+    input: LeaseReconciliationAction,
     leaseMs: number,
     now = new Date(),
   ): Promise<LeaseEvidenceRecord> {
-    const action = reconciliationActionSchema.parse(input);
+    const action = leaseReconciliationActionSchema.parse(input);
     return this.withLeaseRecoveryLock(async () => {
       const current = await this.inspectLease(leaseMs, now);
       if (
@@ -774,6 +798,45 @@ function assertQueueTransition(
 ): void {
   if (!allowedQueueTransitions[current].includes(next)) {
     throw new Error(`Illegal queue transition: ${current} -> ${next}`);
+  }
+}
+
+function assertQueueReconciliationTransition(
+  actionKind:
+    | "reset-abandoned-queue-item"
+    | "quarantine-queue-item"
+    | "bind-queue-to-attempt"
+    | "synchronize-queue-from-terminal-attempt",
+  current: QueueItem,
+  next: QueueItem,
+): void {
+  const allowed =
+    actionKind === "reset-abandoned-queue-item"
+      ? ["queued", "dispatching"].includes(current.status) &&
+        next.status === "queued" &&
+        !next.dispatchOperationId &&
+        !next.attemptId &&
+        !next.completion
+      : actionKind === "quarantine-queue-item"
+        ? next.status === "needs-input" &&
+          !next.dispatchOperationId &&
+          !next.attemptId &&
+          !next.completion
+        : actionKind === "bind-queue-to-attempt"
+          ? current.status === "dispatching" &&
+            next.status === "running" &&
+            Boolean(next.dispatchOperationId) &&
+            Boolean(next.attemptId) &&
+            !next.completion
+          : ["completed", "failed", "needs-input", "cancelled"].includes(
+              next.status,
+            ) &&
+            Boolean(next.attemptId) &&
+            next.completion?.attemptId === next.attemptId;
+  if (!allowed) {
+    throw new Error(
+      `Illegal ${actionKind} queue reconciliation transition: ${current.status} -> ${next.status}`,
+    );
   }
 }
 

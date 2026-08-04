@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -24,6 +25,7 @@ test("publishes the provider-neutral MCP tool contract", async () => {
     new GitWorkspaceManager(store.workspaceRoot()),
     new WorkerRegistry([]),
   );
+  const queue = new QueueStore(store);
   const server = createMcpServer(conductor);
   const client = new Client({ name: "conductor-test", version: "1.0.0" });
   const [clientTransport, serverTransport] =
@@ -84,6 +86,48 @@ test("publishes the provider-neutral MCP tool contract", async () => {
         }
       ).lease.state,
     ).toBe("absent");
+
+    const now = new Date().toISOString();
+    await store.writeJsonAtomic(queue.itemPath("job_mcp_repair"), {
+      schema: "conductor.queue-item/v2",
+      jobId: "job_mcp_repair",
+      status: "dispatching",
+      revision: 0,
+      dispatchOperationId: randomUUID(),
+      priority: 0,
+      dependsOnJobIds: [],
+      createdAt: now,
+      updatedAt: now,
+    });
+    const repairInspection = await client.callTool({
+      name: "reconcile_runtime",
+      arguments: {},
+    });
+    const repairProposal = (
+      repairInspection.structuredContent as {
+        availableActions: Array<{ kind: string }>;
+      }
+    ).availableActions.find(
+      (candidate) => candidate.kind === "reset-abandoned-queue-item",
+    );
+    expect(repairProposal).toBeTruthy();
+    const repaired = await client.callTool({
+      name: "apply_reconciliation_action",
+      arguments: {
+        schema: "conductor.reconciliation-action/v1",
+        proposal: repairProposal,
+        approval: {
+          approvedBy: "mcp-test-owner",
+          approvedAt: new Date().toISOString(),
+          reason: "Exercise the public evidence-bound state repair surface",
+        },
+      },
+    });
+    expect(repaired.isError).not.toBe(true);
+    expect(await queue.read("job_mcp_repair")).toMatchObject({
+      status: "queued",
+      revision: 1,
+    });
   } finally {
     await client.close();
     await server.close();

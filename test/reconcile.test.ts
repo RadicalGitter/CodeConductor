@@ -15,6 +15,7 @@ import path from "node:path";
 
 import type { AttemptManifest } from "../src/contracts/attempt.js";
 import type { QueueItem } from "../src/contracts/queue.js";
+import type { ReconciliationActionProposal } from "../src/contracts/reconcile.js";
 import { Conductor } from "../src/orchestrator/conductor.js";
 import {
   QueueStore,
@@ -170,6 +171,10 @@ test("owner quarantine preserves unreadable lease bytes and records the reason",
       now,
     );
     expect(result.report.lease.state).toBe("absent");
+    expect(result.evidence.schema).toBe("conductor.lease-evidence/v1");
+    if (result.evidence.schema !== "conductor.lease-evidence/v1") {
+      throw new Error("Expected lease reconciliation evidence");
+    }
     expect(
       await readFile(
         path.join(result.evidence.evidencePath, "lease.json"),
@@ -212,6 +217,10 @@ test("owner quarantine preserves an incomplete stale lease directory", async () 
       approvedAction(report.availableActions[0]!, now),
       now,
     );
+    expect(result.evidence.schema).toBe("conductor.lease-evidence/v1");
+    if (result.evidence.schema !== "conductor.lease-evidence/v1") {
+      throw new Error("Expected lease reconciliation evidence");
+    }
     expect(result.evidence.originalState).toBe("incomplete");
     expect((await stat(result.evidence.evidencePath)).isDirectory()).toBe(true);
     await expect(
@@ -324,6 +333,10 @@ test("a dead reconciliation owner is preserved and cannot wedge lease repair", a
       approvedAction(report.availableActions[0]!, now),
       now,
     );
+    expect(result.evidence.schema).toBe("conductor.lease-evidence/v1");
+    if (result.evidence.schema !== "conductor.lease-evidence/v1") {
+      throw new Error("Expected lease reconciliation evidence");
+    }
     expect(result.evidence.originalState).toBe("corrupt");
     const mutexEvidence = path.join(
       dataRoot,
@@ -456,7 +469,9 @@ test("dry-run reconciliation reports queue and attempt relationship mismatches w
     expect(kinds).toContain("dispatch-operation-mismatch");
     expect(kinds).toContain("terminal-queue-nonterminal-attempt");
     expect(kinds).toContain("unreferenced-nonterminal-attempt");
-    expect(report.availableActions).toEqual([]);
+    expect(report.availableActions.map((action) => action.kind)).toContain(
+      "quarantine-queue-item",
+    );
     const after = await stat(queue.itemPath(queueItem.jobId));
     expect(after.mtimeMs).toBe(before.mtimeMs);
   } finally {
@@ -600,10 +615,8 @@ function createReconciler(
   return new RuntimeReconciler(conductor, queue, leaseMs);
 }
 
-function approvedAction(
-  proposal: NonNullable<
-    Awaited<ReturnType<QueueStore["inspectLease"]>>["ownerAction"]
-  >,
+function approvedAction<T extends ReconciliationActionProposal>(
+  proposal: T,
   now: Date,
 ) {
   return {
