@@ -114,6 +114,27 @@ test("lease inspection distinguishes initialization, stale absence, and corrupti
   }
 });
 
+test("young corrupt lease evidence requires waiting rather than implicit authority", async () => {
+  const dataRoot = await mkdtemp(
+    path.join(os.tmpdir(), "conductor-young-corrupt-"),
+  );
+  const store = new ArtifactStore(dataRoot);
+  const queue = new QueueStore(store);
+  const reconciler = createReconciler(store, queue, 1_000);
+  const lockDirectory = path.join(dataRoot, "queue", "dispatcher.lock");
+
+  try {
+    await queue.initialize();
+    await mkdir(lockDirectory);
+    await writeFile(path.join(lockDirectory, "lease.json"), "{broken", "utf8");
+    const report = await reconciler.inspect();
+    expect(report.availableActions).toEqual([]);
+    expect(report.issues[0]?.requiredAuthority).toBe("wait-for-owner");
+  } finally {
+    await rm(dataRoot, { recursive: true, force: true });
+  }
+});
+
 test("owner quarantine preserves unreadable lease bytes and records the reason", async () => {
   const dataRoot = await mkdtemp(
     path.join(os.tmpdir(), "conductor-quarantine-"),

@@ -32,7 +32,9 @@ export class RuntimeReconciler {
           kind: "lease-reconciliation-required",
           severity: "blocked",
           summary: lease.detail,
-          requiredAuthority: lease.ownerAction ? "owner-action" : "none",
+          requiredAuthority: lease.ownerAction
+            ? "owner-action"
+            : "wait-for-owner",
         }),
       );
     }
