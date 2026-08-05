@@ -4,6 +4,8 @@
 - First product target: Vesserin Observation Projection v0
 - Governing review: Ultra adversarial review of commit `5bf3cf2`
 - Date: 2026-08-04
+- Route update: GPT-5.6 Luna API implementation and audit candidates added
+  2026-08-05; neither route is promoted without a matched Vesserin comparison
 
 ## Intent anchor
 
@@ -25,21 +27,23 @@ architect action.
 
 ## What is committed, experimental, and deferred
 
-| Element                                                         | Classification            | Current support                                               | Decision                                                        |
-| --------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------- |
-| High-concept co-design followed by delegated implementation     | committed direction       | Vesserin design authority and Conductor jobs exist separately | make this the first real product workflow                       |
-| Exact-revision, isolated proposal work                          | committed constraint      | implemented                                                   | preserve and harden                                             |
-| Deterministic scope and acceptance evidence                     | committed constraint      | implemented, with eligibility gaps                            | seal before the pilot                                           |
-| A Vesserin-owned compiler/context adapter                       | committed direction       | planned only                                                  | build after core hardening                                      |
-| Source comments near implementation seams                       | committed affordance      | generic strict-JSON comments exist                            | use for the first pilot; add symbol binding only after evidence |
-| Local workers writing most implementation bodies                | hypothesis                | one trivial live canary                                       | measure on a nontrivial backend package                         |
-| Two simultaneous local workers improving throughput             | hypothesis                | deterministic fixtures only                                   | run a paired sequential/concurrent experiment                   |
-| Sonnet review and bounded correction                            | hypothesis                | review packet only                                            | add after evidence integrity; measure an ablation               |
-| Worker self-review                                              | superseded                | deliberately absent                                           | do not restore under a new name                                 |
-| Token-state checkpoint micromanagement                          | superseded for production | outside this runtime                                          | omit from the workflow                                          |
-| Automatic bug discovery and fix proposals                       | committed direction       | Vesserin instruments partly built                             | stage from deterministic reports to bounded proposals           |
-| Automatic canonical merge                                       | not accepted              | absent                                                        | keep absent                                                     |
-| Generated modules or engine lineages inside experimental worlds | preserved dream           | verifier scaffold only                                        | reopen after a microVM boundary and Vesserin M4/M6 evidence     |
+| Element                                                         | Classification            | Current support                                               | Decision                                                            |
+| --------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------- |
+| High-concept co-design followed by delegated implementation     | committed direction       | Vesserin design authority and Conductor jobs exist separately | make this the first real product workflow                           |
+| Exact-revision, isolated proposal work                          | committed constraint      | implemented                                                   | preserve and harden                                                 |
+| Deterministic scope and acceptance evidence                     | committed constraint      | implemented, with eligibility gaps                            | seal before the pilot                                               |
+| A Vesserin-owned compiler/context adapter                       | committed direction       | planned only                                                  | build after core hardening                                          |
+| Source comments near implementation seams                       | committed affordance      | generic strict-JSON comments exist                            | use for the first pilot; add symbol binding only after evidence     |
+| Inexpensive workers writing most implementation bodies          | hypothesis                | one local-model canary and one accepted pilot leaf            | compare local and Luna API routes on frozen Vesserin packages       |
+| GPT-5.6 Luna API as an implementation worker                    | candidate route           | not integrated                                                | add a budgeted provider profile; promote only from matched evidence |
+| GPT-5.6 Luna API as an independent auditor of non-Luna work     | candidate route           | not integrated                                                | compare findings and downstream survival against no audit           |
+| Two simultaneous workers improving throughput                   | hypothesis                | deterministic fixtures only                                   | run paired sequential/concurrent experiments per provider route     |
+| Sonnet review and bounded correction                            | hypothesis                | review packet only                                            | add after evidence integrity; measure an ablation                   |
+| Worker self-review                                              | superseded                | deliberately absent                                           | do not restore under a new name                                     |
+| Token-state checkpoint micromanagement                          | superseded for production | outside this runtime                                          | omit from the workflow                                              |
+| Automatic bug discovery and fix proposals                       | committed direction       | Vesserin instruments partly built                             | stage from deterministic reports to bounded proposals               |
+| Automatic canonical merge                                       | not accepted              | absent                                                        | keep absent                                                         |
+| Generated modules or engine lineages inside experimental worlds | preserved dream           | verifier scaffold only                                        | reopen after a microVM boundary and Vesserin M4/M6 evidence         |
 
 ## Definition of the goal
 
@@ -50,7 +54,7 @@ through this chain:
 Oscar + premium architect define game meaning
   -> architect freezes interfaces, oracles, scope, and contract graph
   -> Conductor validates one committed revision
-  -> local workers implement isolated contract nodes
+  -> selected inexpensive workers implement isolated contract nodes
   -> deterministic checks and an aggregate assembly prove the package
   -> independent review produces advisory findings
   -> Oscar reviews game-facing behavior; premium architect reviews evidence
@@ -60,7 +64,8 @@ Oscar + premium architect define game meaning
 
 The pilot success hypothesis is deliberately measurable:
 
-- local workers originate most package implementation bodies and at least 70%
+- selected inexpensive workers originate most package implementation bodies
+  and at least 70%
   of the accepted post-preparation production-code diff;
 - at least two of the three worker implementation contracts are accepted
   without a premium rewrite; manual rewrites remain labeled rejected routes;
@@ -97,6 +102,47 @@ evidence, and turning failures into diagnostic or fix proposals.
 Conductor and Vesserin `AGENTS.md` files advertise the affordance and point to
 project authority. They stay concise; the procedure remains in the skill, and
 permissions remain in runtime policy rather than prompt text.
+
+## Candidate Luna API route
+
+The July 30, 2026 GPT-5.6 Luna price reduction materially changed the worker
+economics. It is now plausible that bounded API implementation costs less than
+the electricity, latency, retries, and supervisory attention of the local
+route. That is a routing hypothesis, not permission to bypass Conductor or a
+claim that generic coding benchmarks establish Vesserin quality.
+
+Conductor should support two separately measured Luna roles:
+
+1. **Implementation worker.** Luna receives a frozen, positively selected
+   context pack and one isolated contract, uses only the worker tools granted
+   by its profile, and returns the ordinary proposal evidence.
+2. **Independent auditor.** Luna may inspect a sealed packet produced by a
+   local or otherwise non-Luna worker and return typed advisory findings. A
+   Luna review of Luna-written work is same-route model review and must not be
+   labeled independent merely because it uses a second API request.
+
+The API route must preserve provider neutrality and add no model authority:
+
+- jobs reference an owner-created provider/profile ID rather than accepting an
+  endpoint, API key, model, effort, or budget from a worker;
+- credentials remain process-scoped secrets and never enter contracts, prompts,
+  logs, artifacts, patches, or review packets;
+- source and evidence sent externally are positively selected by the project
+  profile; whole-repository upload is not an implicit convenience;
+- the attempt records provider, exact model/snapshot when exposed, effort,
+  request identifiers, prompt/cached/reasoning/output tokens, cache behavior,
+  latency, retries, and computed cost;
+- deterministic per-attempt and per-package token/currency ceilings stop new
+  requests; a model cannot raise its own budget;
+- rate limits, provider errors, malformed tool calls, and incomplete streams
+  become typed retained outcomes rather than invisible harness retries;
+- deterministic acceptance and canonical integration remain unchanged.
+
+Do not bake a volatile public price into job policy. Store the dated rate card
+or owner-entered price schedule used for each experiment beside its cost
+calculation. Promote Luna for a task class only when matched accepted outcomes,
+hidden-check survival, correction burden, wall time, and total cost beat or
+justify the local route.
 
 ## Authority model
 
@@ -758,16 +804,19 @@ times as many accepted proposals per wall-clock hour without more than a five-
 percentage-point acceptance drop or materially higher review cost. Otherwise
 one strong worker remains the route.
 
-### 2. Model and context routing
+### 2. Worker, provider, model, and context routing
 
-Compare KAT/APEX, Laguna, Qwen, or later candidates only on the same frozen
-representative corpus. A model profile is invalidated by any change to model,
-quant, backend, chat template, sampler, thinking mode, context, slot layout,
-harness, tool parser, system prompt, or Conductor contract.
+Compare Luna API, KAT/APEX, Laguna, Qwen, or later candidates only on the same
+frozen representative corpus. A route profile is invalidated by any change to
+provider, endpoint class, model or snapshot, quant, backend, chat template,
+sampler, reasoning effort, context, slot layout, harness, tool parser, system
+prompt, price schedule, or Conductor contract.
 
 Measure accepted outcomes and correction burden, not generic benchmark rank or
-tokens per second alone. Test one large-context worker against multiple smaller
-contexts when the actual package graph makes both routes meaningful.
+tokens per second or nominal API price alone. Test one large-context worker
+against multiple smaller contexts when the actual package graph makes both
+routes meaningful. Report local electricity and hardware time separately from
+API tokens and currency; neither is zero merely because it is hard to meter.
 
 ### 3. Contract granularity
 
@@ -785,10 +834,12 @@ Impact Atlas changes worker behavior.
 
 ### 5. Independent-review ablation
 
-Randomly route eligible, frozen packages through no external semantic review or
-Sonnet review before premium assessment. Blind the premium assessor to the
-route where practical. Measure defects found, false positives, corrections,
-hidden-check survival, review time, and total cost.
+Randomly route eligible, frozen packages through no external semantic review,
+Sonnet review, or Luna review of a non-Luna proposal before premium assessment.
+Blind the premium assessor to the route where practical. Measure defects found,
+false positives, corrections, hidden-check survival, review time, and total
+cost. Keep same-model or same-route review in a separate labeled cohort; it is
+not the independent-review treatment.
 
 Do not compare worker self-review; it has already been rejected as an
 independent evidence source.
@@ -885,15 +936,16 @@ Keep each item independently testable and commit it separately:
 7. package-run schema, aggregate assembly, dispositions, and morning report;
 8. profile-bound model-facing control surface;
 9. diagnostics event stream, health/explain/reconcile/evidence tools;
-10. model/harness profiles and benchmark exporter;
-11. Vesserin Impact context-pack command and project compiler;
-12. disposable Vesserin qualification fixtures;
-13. Observation Projection architect preparation commit;
-14. one-leaf canary, then the full concurrency-two pilot;
-15. independent-review ablation and bounded correction;
-16. deterministic Vesserin report-to-capsule-to-fix-proposal loop;
-17. semantic report clustering and batched external review;
-18. larger M2 backend package after the world-space decision is repaired.
+10. model/harness/provider profiles and benchmark exporter;
+11. budgeted Luna API candidate adapter with secret-safe evidence and cost capture;
+12. Vesserin Impact context-pack command and project compiler;
+13. disposable Vesserin qualification fixtures;
+14. Observation Projection architect preparation commit;
+15. matched local/Luna one-leaf canary, then the justified concurrency pilot;
+16. independent-review ablation and bounded correction;
+17. deterministic Vesserin report-to-capsule-to-fix-proposal loop;
+18. semantic report clustering and batched external review;
+19. larger M2 backend package after the world-space decision is repaired.
 
 ## Review triggers
 
@@ -903,6 +955,8 @@ Reopen this plan when:
   stubs consume more premium attention than direct implementation;
 - package assembly or review cost exceeds worker generation cost;
 - a model/harness/context change invalidates route evidence;
+- provider pricing, data handling, model identity, or rate limits change enough
+  to invalidate the Luna comparison;
 - remote or multi-user access changes the trusted-client assumption;
 - Vesserin reaches M4 autonomous play or M6 mechanic generation;
 - Sonnet review fails to improve hidden-check survival or review time;
