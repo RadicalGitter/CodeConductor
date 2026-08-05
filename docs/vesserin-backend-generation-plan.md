@@ -413,8 +413,10 @@ modules.
 
 Deliver in the Vesserin repository:
 
-- a machine-readable Impact Atlas query/context-pack command with card paths,
-  IDs, statuses, hashes, named tests, and exact Vesserin revision;
+- a machine-readable Documentation/Impact Atlas query and context-pack command
+  with document authority/importance, hierarchical semantic topics, exact
+  section ranges, card paths, IDs, statuses, hashes, named tests, and exact
+  Vesserin revision;
 - a package compiler that reads approved design packets and source-authored
   `@conductor-contract` records from tracked files; for the first pilot, those
   records live in separate protected files and point at dedicated
@@ -422,7 +424,8 @@ Deliver in the Vesserin repository:
 - Vesserin task-weight classification and a premium-authored impact hypothesis
   requirement for heavy work;
 - frozen context packs containing only relevant instructions, design sections,
-  Atlas cards, interfaces, and tests;
+  Atlas cards, interfaces, and tests; topic parents and descendants are
+  discoverable context, not an instruction to load the complete tree;
 - standard focused-test, full-check, build, determinism, docs, and external-
   verifier command profiles;
 - default protection for `AGENTS.md`, decisions, schemas, package/lock files,
@@ -434,6 +437,13 @@ Deliver in the Vesserin repository:
   plus a clean-clone `npm run check` and `npm run build` canary distinct from
   the BusyBox isolation canary;
 - review-packet enrichment that translates evidence into game-facing behavior;
+- typed Vesserin finding adapters for deterministic defects, migration
+  obligations, missing assets, mod-composition conflicts, and later in-game
+  feedback; Vesserin owns the immutable finding/disposition record while any
+  GitHub, Linear, or other ticket is an idempotent coordination view;
+- bounded proposal contracts for resolving findings without granting the
+  plugin authority to change design meaning, accept its own work, or close a
+  report merely because a worker completed;
 - later, symbol identity and `next-declaration` binding when exact-path
   contracts produce real placement failures.
 
@@ -653,6 +663,13 @@ Vesserin already has the correct foundation: `OK`, `REJECTED`, and `CRASHED`,
 named invariants, deterministic replay, reproduction capsules, and mechanical
 diagnosis. Conductor should connect these instruments rather than invent a
 second bug ontology.
+
+The Vesserin finding contract is broader than bugs. Missing assets, schema
+migration obligations, mod-composition conflicts, player feedback, and design
+questions share storage and triage while retaining different proof standards.
+Conductor's finding records and external ticket adapters are derived
+orchestration evidence; Vesserin remains authoritative for the original report,
+its disposition, and what counts as resolved.
 
 ### Finding lifecycle
 

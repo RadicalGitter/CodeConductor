@@ -113,8 +113,10 @@ typed findings, bounded correction, and ablation measurement remain planned.
 
 ## Slice 6 — Vesserin plugin
 
-Impact Atlas context retrieval, Vesserin contract vocabulary, invariant-aware
-acceptance, wish/run artifacts, and later story-as-instrument evaluation.
+Documentation/Impact Atlas context retrieval with hierarchical section ranges,
+Vesserin contract vocabulary, invariant-aware acceptance, typed finding
+adapters for bugs/assets/migrations/mod conflicts, wish/run artifacts, and later
+story-as-instrument evaluation.
 
 **Exit:** useful Vesserin work runs through the generic core without placing
 Vesserin concepts inside core packages.
