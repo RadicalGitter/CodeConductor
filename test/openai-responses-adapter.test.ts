@@ -137,11 +137,14 @@ test("the default registry advertises the API adapter only from owner configurat
   try {
     process.env.CONDUCTOR_PROVIDER_PROFILES_FILE = fixture.profilesPath;
     process.env.OPENAI_API_KEY = secret;
-    process.env.CONDUCTOR_OPENAI_RESPONSES_BUN_BIN = process.execPath;
+    delete process.env.CONDUCTOR_OPENAI_RESPONSES_BUN_BIN;
     const description = createDefaultWorkerRegistry()
       .list()
       .find((entry) => entry.id === "openai-responses");
-    expect(description).toMatchObject({ available: true });
+    expect(description).toMatchObject({
+      available: true,
+      executable: process.execPath,
+    });
   } finally {
     restore("CONDUCTOR_PROVIDER_PROFILES_FILE", previousProfiles);
     restore("OPENAI_API_KEY", previousKey);

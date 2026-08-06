@@ -35,7 +35,7 @@ export class OpenAIResponsesAdapter implements WorkerAdapter {
     const requestedExecutable =
       options.executable ??
       process.env.CONDUCTOR_OPENAI_RESPONSES_BUN_BIN ??
-      "bun";
+      (process.versions.bun ? process.execPath : "bun");
     this.executable = resolveExecutablePath(requestedExecutable);
     this.runnerPath = path.resolve(
       options.runnerPath ??

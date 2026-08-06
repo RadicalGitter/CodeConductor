@@ -22,8 +22,34 @@ It never merges into the project checkout.
 
 1. Install PowerShell 7 (`pwsh`) on Windows. It is part of the supported
    process-ownership profile, not an optional administration shell.
-2. Copy `.env.example` to the ignored `.env.local` and replace `YOUR_USER`.
-3. Copy `config/command-profiles.example.json` to the ignored
+2. Copy `.env.example` to the ignored `.env.local`, replace its active path
+   placeholders for this machine, and remove route-specific lines for workers
+   this machine will not run. Confirm the secret file is ignored before adding
+   credentials:
+
+   ```powershell
+   git check-ignore -v .env.local
+   ```
+
+   For Luna, give every machine its own revocable key and enter it only as
+   `OPENAI_API_KEY` in that machine's `.env.local` (or supply it through an
+   OS-owned process environment). Edit the file directly rather than putting
+   the key in a command argument or shell history. Never copy a populated
+   `.env.local` between machines, commit it, add the key to a provider profile,
+   or add it to `CONDUCTOR_WORKER_ENV_ALLOWLIST`. Bun loads the ignored file
+   when Conductor starts from the repository root.
+
+3. Copy `config/provider-profiles.example.json` to the ignored
+   `config/provider-profiles.local.json`. Set
+   `CONDUCTOR_PROVIDER_PROFILES_FILE` to that absolute local path. Conductor
+   normally reuses the real Bun executable already running it; set
+   `CONDUCTOR_OPENAI_RESPONSES_BUN_BIN` only to an absolute `bun.exe` when an
+   unusual host requires an override. Do not point it at `bun.ps1`, `bun.cmd`,
+   or another shell shim. The provider file contains model, effort, dated rate
+   card, and hard budgets; it contains only the key's environment-variable
+   name. Verify the rate card against current provider documentation before a
+   paid run and reduce budgets for a smaller canary when appropriate.
+4. Copy `config/command-profiles.example.json` to the ignored
    `config/command-profiles.local.json`. Keep only absolute executables that the
    owner intentionally allows as setup or acceptance commands.
    If using the external verifier, also copy
@@ -35,7 +61,8 @@ It never merges into the project checkout.
    `config/resource-profile.local.json`, set
    `CONDUCTOR_RESOURCE_PROFILE_FILE`, and review every byte, time, retry, disk,
    and retention limit. Jobs cannot widen this owner profile.
-4. With the intended llama.cpp-compatible server running, create a dedicated
+5. If this machine will use the local route, start the intended
+   llama.cpp-compatible server and create a dedicated
    Kode profile:
 
    ```powershell
@@ -47,23 +74,29 @@ It never merges into the project checkout.
    profile unless `--force` is supplied. The profile uses a dummy local API key
    and is separate from the user's interactive Kode configuration.
 
-5. Prove the complete configuration before leaving it unattended:
+6. Prove the complete configuration before leaving it unattended:
 
    ```powershell
    bun run doctor
    bun run smoke:runtime-mcp
-   bun run smoke:kode-live
-   bun run smoke:sandbox
    bun run check
    ```
 
-The doctor fails closed when runtime reconciliation reports a blocked issue,
-Kode is unavailable, its dedicated config is not explicitly inherited,
-thinking/high effort is absent, the configured model is not the model currently
-served, the runtime data directory cannot initialize, disk falls below the
-owner reserve, a GC action was interrupted or failed, or no owner-side command
-profile is available. It reports the current resource profile and dry-run GC
-summary and never prints API keys.
+   `doctor` verifies configured worker routes without printing credential
+   values. Run `bun run smoke:kode-live` only on a configured local-worker
+   machine and `bun run smoke:sandbox` only when the external verifier profile
+   is configured. Run `bun run smoke:openai-live` only when the owner explicitly
+   authorizes its small paid request; offline adapter and secret-non-leak tests
+   are part of `bun run check`.
+
+The doctor fails closed when runtime reconciliation reports a blocked issue, no
+worker adapter is available, a configured Kode or OpenAI Responses route is
+unavailable, Kode's dedicated config is not explicitly inherited,
+thinking/high effort is absent, the configured local model is not the model
+currently served, the runtime data directory cannot initialize, disk falls
+below the owner reserve, a GC action was interrupted or failed, or no owner-side
+command profile is available. It reports the current resource profile and
+dry-run GC summary and never prints API keys.
 
 ## External generated-code verifier
 

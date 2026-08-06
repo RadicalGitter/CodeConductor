@@ -17,8 +17,11 @@ The budgeted OpenAI Responses candidate adapter is implemented at `007cc7d`.
 Its strict owner profiles, protocol runner, adapter seam, offline oracles, and
 paid secret-safe canary pass. A matched generic smoke fixture also passes
 through direct llama.cpp KAT/APEX, Luna Medium, and Luna Max. This establishes
-operational parity and measurement only; the matched Vesserin package remains
-the authority for route quality and promotion.
+operational parity and measurement only. The matched Vesserin M1.5 package is
+also complete: Max produced the strongest near-pass, local produced weaker
+near-passes/failures, and neither route reached formal unattended eligibility.
+No route is promoted until a representative package completes without
+architect repair; mixed bounded routing remains the next practical lane.
 
 ## Slice 0 — independent bootstrap
 

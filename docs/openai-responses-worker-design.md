@@ -4,8 +4,8 @@
 - Owner intent: make GPT-5.6 Luna a measurable Conductor worker without giving
   the model new authority
 - First profiles: `luna-medium-v1` and `luna-max-v1`
-- Comparison authority: the later matched Vesserin experiment, not this adapter
-  implementation
+- Comparison authority: the matched Vesserin M1.5 experiment; Max produced the
+  strongest near-pass, but neither route was promoted
 
 ## Bootstrap evidence and package shape
 
@@ -99,6 +99,29 @@ The loader accepts strict JSON with schema
 Unknown properties fail validation. Profiles are selected by ID before any
 network request. The example file documents Luna medium and max but contains no
 secret.
+
+## Machine-local credential setup
+
+The repository's checked `.env.example` is copied to the ignored `.env.local`
+on each machine. A Luna machine uses its own revocable `OPENAI_API_KEY`, an
+ignored local copy of `config/provider-profiles.example.json`, and the real Bun
+executable already running Conductor. An explicit executable override must be
+an absolute `bun.exe`, never a shell shim. The provider JSON contains only
+`apiKeyEnvName`; the key value remains in the machine-local environment and is
+injected only into the Responses runner process.
+
+The laptop and desktop must not share a populated environment file or key.
+`git check-ignore -v .env.local` proves the repository boundary before a key is
+entered. `bun run doctor` reports only credential presence and adapter
+availability. The paid live canary remains an explicit owner-authorized action;
+ordinary `bun run check` uses offline fake-provider tests and proves the key
+cannot enter persisted evidence.
+
+The matched M1.5 run also exposed a current efficiency limit: the stateless
+direct file-tool loop resends growing Responses context and can exhaust a
+cumulative-input budget before a large patch reaches formal acceptance. Split
+large designed systems into bounded contracts and use deterministic assembly;
+do not respond by silently raising spend or context ceilings.
 
 ## Responses protocol
 

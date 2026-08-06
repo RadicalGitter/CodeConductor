@@ -12,6 +12,14 @@ type Check = {
 };
 
 const checks: Check[] = [];
+const kodeRouteConfigured = Boolean(
+  process.env.CONDUCTOR_KODE_ENTRY ||
+  process.env.CONDUCTOR_KODE_BIN ||
+  process.env.KODE_CONFIG_DIR,
+);
+const openaiRouteConfigured = Boolean(
+  process.env.CONDUCTOR_PROVIDER_PROFILES_FILE || process.env.OPENAI_API_KEY,
+);
 try {
   const runtime = createConductorRuntimeFromEnvironment();
   await runtime.conductor.store.initialize();
@@ -27,14 +35,40 @@ try {
       ? `lease=${reconciliation.lease.state}; no blocked state mismatches`
       : blocked.map((issue) => `${issue.kind}: ${issue.summary}`).join("; "),
   );
-  const kode = runtime.conductor.workers
-    .list()
-    .find((adapter) => adapter.id === "kode");
+  const adapters = runtime.conductor.workers.list();
+  const availableAdapters = adapters.filter((adapter) => adapter.available);
   record(
-    "kode-adapter",
-    kode?.available === true,
-    kode?.available ? `available at ${kode.executable}` : "unavailable",
+    "worker-adapters",
+    availableAdapters.length > 0,
+    availableAdapters.length > 0
+      ? availableAdapters
+          .map((adapter) => adapter.id)
+          .sort()
+          .join(", ")
+      : "no worker adapter is available",
   );
+  if (kodeRouteConfigured) {
+    const kode = adapters.find((adapter) => adapter.id === "kode");
+    record(
+      "kode-adapter",
+      kode?.available === true,
+      kode?.available
+        ? `available at ${kode.executable}`
+        : "configured but unavailable",
+    );
+  }
+  if (openaiRouteConfigured) {
+    const openai = adapters.find(
+      (adapter) => adapter.id === "openai-responses",
+    );
+    record(
+      "openai-responses-adapter",
+      openai?.available === true,
+      openai?.available
+        ? "owner profiles and machine-local credential are available"
+        : "configured but unavailable; check the profile file, Bun path, and credential presence",
+    );
+  }
   record("data-directory", true, runtime.conductor.store.root);
   const filesystem = await statfs(runtime.conductor.store.root);
   const freeDiskBytes = filesystem.bavail * filesystem.bsize;
@@ -89,20 +123,23 @@ try {
 }
 
 const kodeConfigDirectory = process.env.KODE_CONFIG_DIR;
-const workerEnvironment = parseEnvironmentList(
-  process.env.CONDUCTOR_WORKER_ENV_ALLOWLIST,
-).map((entry) => entry.toUpperCase());
-record(
-  "kode-config-boundary",
-  Boolean(kodeConfigDirectory) && workerEnvironment.includes("KODE_CONFIG_DIR"),
-  kodeConfigDirectory
-    ? workerEnvironment.includes("KODE_CONFIG_DIR")
-      ? path.resolve(kodeConfigDirectory)
-      : "KODE_CONFIG_DIR is not in CONDUCTOR_WORKER_ENV_ALLOWLIST"
-    : "KODE_CONFIG_DIR is unset",
-);
+if (kodeRouteConfigured) {
+  const workerEnvironment = parseEnvironmentList(
+    process.env.CONDUCTOR_WORKER_ENV_ALLOWLIST,
+  ).map((entry) => entry.toUpperCase());
+  record(
+    "kode-config-boundary",
+    Boolean(kodeConfigDirectory) &&
+      workerEnvironment.includes("KODE_CONFIG_DIR"),
+    kodeConfigDirectory
+      ? workerEnvironment.includes("KODE_CONFIG_DIR")
+        ? path.resolve(kodeConfigDirectory)
+        : "KODE_CONFIG_DIR is not in CONDUCTOR_WORKER_ENV_ALLOWLIST"
+      : "KODE_CONFIG_DIR is unset",
+  );
+}
 
-if (kodeConfigDirectory) {
+if (kodeRouteConfigured && kodeConfigDirectory) {
   try {
     const config = JSON.parse(
       await readFile(path.join(kodeConfigDirectory, "config.json"), "utf8"),

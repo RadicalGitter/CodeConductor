@@ -187,6 +187,14 @@ test("the checked example exposes Luna medium/max without embedding a key", () =
     "luna-max-v1",
     "luna-medium-v1",
   ]);
-  expect(parsed.profiles["luna-max-v1"]?.reasoningEffort).toBe("max");
+  const max = parsed.profiles["luna-max-v1"];
+  expect(max?.reasoningEffort).toBe("max");
+  expect(max?.budget.maxInputTokens).toBe(1_050_000);
+  expect(max?.budget.maxCostMicroUsd).toBeLessThanOrEqual(750_000);
   expect(raw).not.toContain("sk-");
+
+  const environmentExample = readFileSync(path.resolve(".env.example"), "utf8");
+  expect(environmentExample).toContain("CONDUCTOR_PROVIDER_PROFILES_FILE=");
+  expect(environmentExample).toContain("OPENAI_API_KEY=");
+  expect(environmentExample).not.toContain("sk-");
 });
