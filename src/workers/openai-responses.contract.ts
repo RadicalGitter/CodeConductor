@@ -1,0 +1,107 @@
+/* @conductor-contract
+{
+  "id": "runtime.openai-responses-worker-v1",
+  "objective": "Implement the approved provider-neutral OpenAI Responses worker adapter described in docs/openai-responses-worker-design.md, including strict owner profiles, secret-safe bounded file tools, retained usage/cost evidence, registry wiring, an example Luna medium/max profile file, and offline fake-server tests.",
+  "taskClass": "implementation",
+  "adapterId": "kode",
+  "adapterOptions": { "model": "main" },
+  "scope": {
+    "allowedPaths": [
+      "src/contracts/provider-profile.ts",
+      "src/review/packet.ts",
+      "src/review/worker-profile.ts",
+      "src/workers/adapter.ts",
+      "src/workers/defaults.ts",
+      "src/workers/openai-responses.ts",
+      "src/workers/openai-responses-runner.ts",
+      "src/index.ts",
+      "test/adapters.test.ts",
+      "test/review-evidence.test.ts",
+      "test/openai-responses.test.ts",
+      "config/provider-profiles.example.json"
+    ],
+    "forbiddenPaths": [
+      "AGENTS.md",
+      "package.json",
+      "bun.lock",
+      "src/orchestrator",
+      "src/runtime",
+      "src/verification",
+      "src/sources",
+      "src/contracts/job.ts",
+      "src/contracts/attempt.ts",
+      "docs"
+    ],
+    "protectedPaths": [
+      "AGENTS.md",
+      "docs",
+      "package.json",
+      "bun.lock",
+      "src/orchestrator",
+      "src/runtime",
+      "src/verification",
+      "src/sources",
+      "src/contracts/job.ts",
+      "src/contracts/attempt.ts",
+      "src/workers/openai-responses.contract.ts"
+    ]
+  },
+  "contextRefs": [
+    "AGENTS.md",
+    "docs/architecture.md",
+    "docs/roadmap.md",
+    "docs/source-contracts.md",
+    "docs/review-evidence-seal.md",
+    "docs/vesserin-backend-generation-plan.md",
+    "docs/openai-responses-worker-design.md",
+    "src/contracts/job.ts",
+    "src/contracts/attempt.ts",
+    "src/review/worker-profile.ts",
+    "src/review/packet.ts",
+    "src/workers/adapter.ts",
+    "src/workers/defaults.ts",
+    "src/workers/kode.ts",
+    "src/runtime/environment.ts",
+    "src/runtime/process-runner.ts",
+    "test/adapters.test.ts",
+    "test/review-evidence.test.ts"
+  ],
+  "constraints": [
+    "Treat docs/openai-responses-worker-design.md as the frozen design contract.",
+    "Jobs select only an owner provider-profile ID; endpoint, key, model, effort, rate card, and budgets remain profile-owned.",
+    "Never persist or print the API key and never place it in process arguments.",
+    "Use the Responses API with store false, parallel_tool_calls false, strict read_file/write_file tools, and no shell capability.",
+    "Preserve current Kode/Codex behavior, existing scope enforcement, process containment, acceptance, and sealed review evidence.",
+    "Add no runtime dependency and make every test offline with a local fake HTTP server.",
+    "Emit a typed secret-safe JSONL run record with exact usage, elapsed time, retries, request IDs, and integer micro-USD cost.",
+    "Do not describe checks as run; Conductor executes the declared acceptance commands after the worker returns."
+  ],
+  "escalateWhen": [
+    "A required implementation change falls outside the declared allowed paths.",
+    "The approved design conflicts with a settled Conductor invariant or existing protected test.",
+    "Credential secrecy cannot be preserved through the current process invocation and evidence model.",
+    "Supporting a provider requires weakening scope, containment, acceptance, or proposal-only authority."
+  ],
+  "setup": [],
+  "acceptance": [
+    {
+      "profile": "bun-test",
+      "args": [
+        "test/openai-responses.test.ts",
+        "test/adapters.test.ts",
+        "test/review-evidence.test.ts"
+      ],
+      "timeoutMs": 180000
+    }
+  ],
+  "timeoutMs": 3600000,
+  "retainWorkspace": true,
+  "executionBoundary": { "kind": "host-worktree" },
+  "dependsOn": [],
+  "priority": 20,
+  "enabled": true
+}
+@end-conductor-contract */
+
+export const openAiResponsesWorkerContract =
+  "runtime.openai-responses-worker-v1" as const;
