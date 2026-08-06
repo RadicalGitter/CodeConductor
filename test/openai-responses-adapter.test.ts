@@ -58,7 +58,8 @@ test("OpenAI adapter selects only an owner profile and keeps its key out of evid
     expect(serializedArguments).not.toContain(secret);
     expect(serializedArguments).not.toContain("gpt-5.6-luna");
     expect(serializedArguments).not.toContain("api.openai.com");
-    expect(serializedArguments).not.toContain("medium");
+    expect(serializedArguments).not.toContain("reasoningEffort");
+    expect(serializedArguments).not.toContain("--reasoning-effort");
     expect(serializedArguments).not.toContain("250000");
     expect(invocation.args).toContain("--profile-id");
     expect(invocation.args).toContain("luna-medium-v1");
