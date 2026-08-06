@@ -16,6 +16,7 @@
     "gc": "bun scripts/gc.ts",
     "smoke:kode-parity": "bun scripts/kode-parity-smoke.ts",
     "smoke:kode-live": "bun scripts/live-kode-canary.ts",
+    "smoke:openai-live": "bun scripts/live-openai-canary.ts",
     "smoke:runtime-mcp": "bun scripts/runtime-mcp-smoke.ts",
     "smoke:sandbox": "bun scripts/sandbox-canary.ts",
     "typecheck": "tsc --noEmit",

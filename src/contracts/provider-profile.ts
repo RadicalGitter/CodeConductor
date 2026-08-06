@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+
 import { z } from "zod/v4";
 
 const identifierSchema = z.string().regex(/^[a-zA-Z0-9_.-]+$/);
@@ -70,34 +73,111 @@ export interface ProviderTokenUsage {
   reasoningTokens: number;
 }
 
-export function loadProviderProfileFile(
-  _filePath: string,
-): ProviderProfileFile {
-  throw new Error("Provider profile loading is not implemented");
+export function loadProviderProfileFile(filePath: string): ProviderProfileFile {
+  return providerProfileFileSchema.parse(
+    JSON.parse(readFileSync(filePath, "utf8")),
+  );
 }
 
 export function resolveProviderProfile(
-  _profileFile: ProviderProfileFile,
-  _profileId: string,
+  profileFile: ProviderProfileFile,
+  profileId: string,
 ): ProviderProfile {
-  throw new Error("Provider profile resolution is not implemented");
+  const profile = profileFile.profiles[profileId];
+  if (!profile) throw new Error(`Unknown provider profile: ${profileId}`);
+  return profile;
 }
 
-export function fingerprintProviderProfile(_profile: ProviderProfile): string {
-  throw new Error("Provider profile fingerprinting is not implemented");
+export function fingerprintProviderProfile(profile: ProviderProfile): string {
+  return createHash("sha256").update(canonicalJson(profile)).digest("hex");
 }
 
 export function calculateProviderCostMicroUsd(
-  _usage: ProviderTokenUsage,
-  _rateCard: ProviderRateCard,
+  usage: ProviderTokenUsage,
+  rateCard: ProviderRateCard,
 ): number {
-  throw new Error("Provider cost calculation is not implemented");
+  assertUsage(usage);
+  const uncachedInputTokens =
+    usage.inputTokens - usage.cachedInputTokens - usage.cacheWriteTokens;
+  const inputNumerator =
+    BigInt(uncachedInputTokens) *
+      BigInt(rateCard.uncachedInputMicroUsdPerMillion) +
+    BigInt(usage.cachedInputTokens) *
+      BigInt(rateCard.cachedInputMicroUsdPerMillion) +
+    BigInt(usage.cacheWriteTokens) *
+      BigInt(rateCard.cacheWriteMicroUsdPerMillion);
+  const outputNumerator =
+    BigInt(usage.outputTokens) * BigInt(rateCard.outputMicroUsdPerMillion);
+  const longContext =
+    rateCard.longContext &&
+    usage.inputTokens > rateCard.longContext.thresholdInputTokens
+      ? rateCard.longContext
+      : undefined;
+  const inputMultiplierNumerator = BigInt(
+    longContext?.inputMultiplierNumerator ?? 1,
+  );
+  const inputMultiplierDenominator = BigInt(
+    longContext?.inputMultiplierDenominator ?? 1,
+  );
+  const outputMultiplierNumerator = BigInt(
+    longContext?.outputMultiplierNumerator ?? 1,
+  );
+  const outputMultiplierDenominator = BigInt(
+    longContext?.outputMultiplierDenominator ?? 1,
+  );
+  const numerator =
+    inputNumerator * inputMultiplierNumerator * outputMultiplierDenominator +
+    outputNumerator * outputMultiplierNumerator * inputMultiplierDenominator;
+  const denominator =
+    1_000_000n * inputMultiplierDenominator * outputMultiplierDenominator;
+  const cost = divideRoundUp(numerator, denominator);
+  if (cost > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error("Provider cost exceeds the safe integer range");
+  }
+  return Number(cost);
 }
 
 export function estimateProviderRequestCostMicroUsd(
-  _inputTokenUpperBound: number,
-  _maxOutputTokens: number,
-  _rateCard: ProviderRateCard,
+  inputTokenUpperBound: number,
+  maxOutputTokens: number,
+  rateCard: ProviderRateCard,
 ): number {
-  throw new Error("Provider request cost estimation is not implemented");
+  return calculateProviderCostMicroUsd(
+    {
+      inputTokens: inputTokenUpperBound,
+      cachedInputTokens: 0,
+      cacheWriteTokens: 0,
+      outputTokens: maxOutputTokens,
+      reasoningTokens: 0,
+    },
+    rateCard,
+  );
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => canonicalJson(entry)).join(",")}]`;
+  }
+  return `{${Object.entries(value as Record<string, unknown>)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`)
+    .join(",")}}`;
+}
+
+function assertUsage(usage: ProviderTokenUsage): void {
+  for (const [name, value] of Object.entries(usage)) {
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new Error(`Provider usage ${name} must be a non-negative integer`);
+    }
+  }
+  if (usage.cachedInputTokens + usage.cacheWriteTokens > usage.inputTokens) {
+    throw new Error(
+      "Provider input usage categories exceed total input tokens",
+    );
+  }
+}
+
+function divideRoundUp(numerator: bigint, denominator: bigint): bigint {
+  return (numerator + denominator - 1n) / denominator;
 }

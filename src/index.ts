@@ -29,6 +29,8 @@ export * from "./workers/adapter.js";
 export * from "./workers/codex.js";
 export * from "./workers/defaults.js";
 export * from "./workers/kode.js";
+export * from "./workers/openai-responses.js";
+export * from "./workers/openai-responses-runner.js";
 export * from "./workspaces/git-workspace.js";
 export * from "./verification/command-executor.js";
 export * from "./verification/scope.js";
