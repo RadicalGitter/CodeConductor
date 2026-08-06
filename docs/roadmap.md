@@ -13,11 +13,12 @@ closure, evidence sealing, coherent package handoff, safe control surfaces,
 the Vesserin adapter, then the product pilot. New feature slices do not outrank
 those gates.
 
-The Luna candidate route is currently an owner-prepared three-leaf package, not
-an implemented adapter. Its first monolithic local attempt was retained as a
-context-overflow failure before acceptance. Provider profiles, protocol runner,
-and adapter wiring now have separate protected oracles so local route evidence
-can be gathered without repeating that oversized attempt.
+The budgeted OpenAI Responses candidate adapter is implemented at `007cc7d`.
+Its strict owner profiles, protocol runner, adapter seam, offline oracles, and
+paid secret-safe canary pass. A matched generic smoke fixture also passes
+through direct llama.cpp KAT/APEX, Luna Medium, and Luna Max. This establishes
+operational parity and measurement only; the matched Vesserin package remains
+the authority for route quality and promotion.
 
 ## Slice 0 — independent bootstrap
 

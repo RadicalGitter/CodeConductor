@@ -1,11 +1,12 @@
 # Vesserin backend generation and continuous-improvement plan
 
-- Status: planned; implementation not started
+- Status: planned product pilot; prerequisite runtime slices partly implemented
 - First product target: Vesserin Observation Projection v0
 - Governing review: Ultra adversarial review of commit `5bf3cf2`
 - Date: 2026-08-04
-- Route update: GPT-5.6 Luna API implementation and audit candidates added
-  2026-08-05; neither route is promoted without a matched Vesserin comparison
+- Route update: GPT-5.6 Luna implementation adapter and matched generic canary
+  completed 2026-08-06; neither implementation nor audit route is promoted
+  without a matched Vesserin comparison
 
 ## Intent anchor
 
@@ -35,7 +36,7 @@ architect action.
 | A Vesserin-owned compiler/context adapter                       | committed direction       | planned only                                                  | build after core hardening                                      |
 | Source comments near implementation seams                       | committed affordance      | generic strict-JSON comments exist                            | use for the first pilot; add symbol binding only after evidence |
 | Inexpensive workers writing most implementation bodies          | hypothesis                | one local-model canary and one accepted pilot leaf            | compare local and Luna API routes on frozen Vesserin packages   |
-| GPT-5.6 Luna API as an implementation worker                    | candidate route           | three-leaf package prepared; first monolith failed safely     | integrate only eligible leaves, then run a paid bounded canary  |
+| GPT-5.6 Luna API as an implementation worker                    | candidate route           | adapter and paid generic Medium/Max canaries pass             | run the matched frozen Vesserin package                         |
 | GPT-5.6 Luna API as an independent auditor of non-Luna work     | candidate route           | not integrated                                                | compare findings and downstream survival against no audit       |
 | Two simultaneous workers improving throughput                   | hypothesis                | deterministic fixtures only                                   | run paired sequential/concurrent experiments per provider route |
 | Sonnet review and bounded correction                            | hypothesis                | review packet only                                            | add after evidence integrity; measure an ablation               |
@@ -143,6 +144,15 @@ or owner-entered price schedule used for each experiment beside its cost
 calculation. Promote Luna for a task class only when matched accepted outcomes,
 hidden-check survival, correction burden, wall time, and total cost beat or
 justify the local route.
+
+The candidate implementation route entered Conductor at `007cc7d`. On
+2026-08-06 the same bounded `clampHealth` source contract passed scope,
+acceptance, and advisory review eligibility through direct llama.cpp KAT/APEX,
+Luna Medium, and Luna Max. Medium cost 1,108 micro-USD and took 30,178 ms of
+worker time; Max cost 1,171 micro-USD and took 13,294 ms; the local worker took
+18,164 ms and its hardware/electricity cost was not measured. These are
+route-smoke figures, not a product-quality result. The frozen Vesserin package
+remains the first meaningful routing comparison.
 
 ## Authority model
 
@@ -937,7 +947,8 @@ Keep each item independently testable and commit it separately:
 8. profile-bound model-facing control surface;
 9. diagnostics event stream, health/explain/reconcile/evidence tools;
 10. model/harness/provider profiles and benchmark exporter;
-11. budgeted Luna API candidate adapter with secret-safe evidence and cost capture;
+11. budgeted Luna API candidate adapter with secret-safe evidence and cost
+    capture — completed by `007cc7d`; generic Medium/Max paid canaries pass;
 12. Vesserin Impact context-pack command and project compiler;
 13. disposable Vesserin qualification fixtures;
 14. Observation Projection architect preparation commit;

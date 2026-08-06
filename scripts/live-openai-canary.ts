@@ -19,63 +19,78 @@ const runtime = createConductorRuntimeFromEnvironment();
 let attemptId: string | undefined;
 
 try {
-  await mkdir(path.join(repository, "src"), { recursive: true });
-  await mkdir(path.join(repository, "docs"), { recursive: true });
+  await mkdir(path.join(repository, "gameplay"), { recursive: true });
   await mkdir(path.join(repository, "test"), { recursive: true });
   await writeFile(
     path.join(repository, "AGENTS.md"),
-    "# Canary\n\nImplement only the bounded function. Do not edit tests.\n",
+    [
+      "# Canary contract",
+      "",
+      "Implement only the requested gameplay function.",
+      "Do not edit tests or repository instructions.",
+      "Run the focused Node test before finishing.",
+      "",
+    ].join("\n"),
     "utf8",
   );
   await writeFile(
-    path.join(repository, "docs", "brief.md"),
-    "The exported answerToCanary() function must return the integer 42.\n",
+    path.join(repository, "gameplay", "health.js"),
+    [
+      "export function clampHealth(value, maximum) {",
+      '  throw new Error("not implemented");',
+      "}",
+      "",
+    ].join("\n"),
     "utf8",
   );
   await writeFile(
-    path.join(repository, "src", "answer.mjs"),
-    'export function answerToCanary() {\n  throw new Error("not implemented");\n}\n',
-    "utf8",
-  );
-  await writeFile(
-    path.join(repository, "test", "answer.test.mjs"),
+    path.join(repository, "test", "health.test.js"),
     [
       'import test from "node:test";',
       'import assert from "node:assert/strict";',
-      'import { answerToCanary } from "../src/answer.mjs";',
+      'import { clampHealth } from "../gameplay/health.js";',
       "",
-      'test("returns the bounded canary answer", () => {',
-      "  assert.equal(answerToCanary(), 42);",
+      'test("clamps gameplay health into zero..maximum", () => {',
+      "  assert.equal(clampHealth(-4, 10), 0);",
+      "  assert.equal(clampHealth(7, 10), 7);",
+      "  assert.equal(clampHealth(14, 10), 10);",
+      "  assert.equal(clampHealth(2, -1), 0);",
       "});",
       "",
     ].join("\n"),
     "utf8",
   );
   await writeFile(
-    path.join(repository, "canary.js"),
+    path.join(repository, "gameplay", "contracts.js"),
     [
       "/* @conductor-contract",
       JSON.stringify(
         {
-          id: "openai-responses-paid-canary",
+          id: "implement-clamp-health",
           objective:
-            "Implement answerToCanary() in src/answer.mjs from the selected brief. Make the smallest possible edit.",
+            "Implement clampHealth(value, maximum) in gameplay/health.js. Clamp maximum below zero to zero; otherwise return value clamped inclusively to zero..maximum.",
           taskClass: "implementation",
           adapterId: "openai-responses",
           adapterOptions: { profile: profileId },
           scope: {
-            allowedPaths: ["src/answer.mjs"],
+            allowedPaths: ["gameplay/health.js"],
             forbiddenPaths: [],
-            protectedPaths: ["AGENTS.md", "docs", "test", "canary.js"],
+            protectedPaths: ["AGENTS.md", "test", "gameplay/contracts.js"],
           },
-          contextRefs: ["docs/brief.md", "src/answer.mjs"],
-          constraints: ["Use no dependencies and preserve the ESM export."],
-          escalateWhen: ["The brief conflicts with the protected test."],
+          contextRefs: ["test/health.test.js", "gameplay/health.js"],
+          constraints: [
+            "Use no dependencies.",
+            "Preserve the exported function name and module format.",
+          ],
+          escalateWhen: [
+            "The test contract conflicts with repository instructions.",
+            "A required edit falls outside gameplay/health.js.",
+          ],
           setup: [],
           acceptance: [
             {
               profile: "node-test",
-              args: ["test/answer.test.mjs"],
+              args: ["test/health.test.js"],
               timeoutMs: 60_000,
             },
           ],
@@ -100,7 +115,6 @@ try {
   await git(repository, ["add", "."]);
   await git(repository, ["commit", "-m", "OpenAI canary baseline"]);
 
-  await runtime.dispatcher.start();
   const sourceRun = await runtime.sources.compileAndEnqueue({
     repositoryPath: repository,
     baseRef: "HEAD",
@@ -109,7 +123,10 @@ try {
   });
   const jobId = sourceRun.enqueued[0]?.jobId;
   if (!jobId) throw new Error("Canary source package produced no job");
-  const terminal = await waitForTerminal(jobId);
+  const terminal = (await runtime.dispatcher.runUntilIdle()).find(
+    (candidate) => candidate.jobId === jobId,
+  );
+  if (!terminal) throw new Error("Canary job disappeared from the queue");
   if (!terminal.attemptId) throw new Error("Canary produced no attempt");
   attemptId = terminal.attemptId;
   const attempt = await runtime.conductor.getAttempt(attemptId);
@@ -117,7 +134,9 @@ try {
   const stdout = await readFile(attempt.artifacts.stdout, "utf8");
   const workerEvidence = parseWorkerEvidence(stdout);
   await assertSecretAbsent(attempt.artifacts, secret);
-  const review = await runtime.conductor.getReviewBundle(attemptId);
+  const review = verification.eligibleForReview
+    ? await runtime.conductor.getReviewBundle(attemptId)
+    : undefined;
   console.log(
     JSON.stringify(
       {
@@ -140,8 +159,9 @@ try {
         usage: workerEvidence.usage,
         costMicroUsd: workerEvidence.costMicroUsd,
         maxCostMicroUsd: workerEvidence.maxCostMicroUsd,
+        workerFailure: workerEvidence.failure,
         secretAbsentFromEvidence: true,
-        reviewAuthority: review.packet.authority,
+        reviewAuthority: review?.packet.authority ?? null,
         runRoot: runtime.conductor.store.root,
         artifacts: attempt.artifacts,
       },
@@ -157,28 +177,12 @@ try {
     process.exitCode = 1;
   }
 } finally {
-  await runtime.dispatcher.stop().catch(() => undefined);
   if (attemptId) {
     await runtime.conductor
       .removeAttemptWorkspace(attemptId)
       .catch(() => undefined);
   }
   await rm(temporary, { recursive: true, force: true });
-}
-
-async function waitForTerminal(jobId: string) {
-  for (;;) {
-    const item = (await runtime.dispatcher.list()).find(
-      (candidate) => candidate.jobId === jobId,
-    );
-    if (
-      item &&
-      ["completed", "failed", "needs-input", "cancelled"].includes(item.status)
-    ) {
-      return item;
-    }
-    await Bun.sleep(250);
-  }
 }
 
 function parseWorkerEvidence(stdout: string): OpenAIResponsesRunEvidence {

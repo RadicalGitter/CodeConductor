@@ -1,6 +1,6 @@
 # OpenAI Responses worker adapter
 
-- Status: approved bootstrap design; three-leaf implementation package prepared
+- Status: implemented; offline oracles and paid Medium/Max canaries pass
 - Owner intent: make GPT-5.6 Luna a measurable Conductor worker without giving
   the model new authority
 - First profiles: `luna-medium-v1` and `luna-max-v1`
@@ -17,12 +17,48 @@ and left the proposal ineligible; none of it entered the repository.
 The replacement package has three independent leaves with protected
 architect-authored oracles: provider profiles and cost accounting, the
 Responses/tool protocol runner, and the Conductor adapter/registry seam. The
-currently served KAT/APEX model has a 262,144-token KV allocation divided into
-four 65,536-token slots. Each replacement leaf therefore keeps a much smaller
-positive context pack. A proposed three-slot 98,304-token experiment would
-require a 294,912-token KV allocation and a controlled model-server restart; it
-is capacity evidence to gather, not a prerequisite silently assumed by this
-package.
+direct llama.cpp server was reconfigured from four 65,536-token slots to two
+131,072-token slots within its existing 262,144-token KV allocation. That
+removed the runner leaf's previous context ceiling without increasing total KV
+memory.
+
+The two-slot local run `source_3b050402fae6a29450c9` is retained as routing
+evidence, not accepted implementation. The profile leaf passed its original
+oracle but failed architect review because its fingerprint erased nested
+configuration and its long-context/cost logic was wrong. The runner and adapter
+leaves failed acceptance. The oracles were strengthened, and the reviewed
+implementation entered at `007cc7d`; no worker proposal was auto-accepted.
+
+## Implemented and live evidence — 2026-08-06
+
+`007cc7d` adds the strict owner profile, Responses tool loop, adapter registry
+seam, secret-safe evidence, integer cost accounting, and paid-canary command.
+The complete offline gate passed 102/102 tests through `bun run check` before
+the live call.
+
+The first paid probe (`job_97cac1e6ee9a2b4fdea6`) authenticated and completed
+four API/tool turns, then failed safely at its four-request ceiling before
+writing. It cost 516 micro-USD. Raising only the canary request and tool-call
+ceilings to eight was enough for completion; the token and 50,000-micro-USD
+ceilings remained unchanged.
+
+The matched `clampHealth` smoke fixture then ran through the same source
+contract, context refs, scope, and acceptance test on all three requested test
+points:
+
+| Route                                                     | Worker duration | Result                                | Usage/cost                                                                    |
+| --------------------------------------------------------- | --------------: | ------------------------------------- | ----------------------------------------------------------------------------- |
+| KAT/APEX through direct llama.cpp, one 131,072-token slot |       18,164 ms | eligible; scope and acceptance passed | 9,588 model-reported tokens; local electricity and hardware cost not measured |
+| GPT-5.6 Luna Medium                                       |       30,178 ms | eligible; scope and acceptance passed | 3,760 input, 1,038 cache-write, 253 output tokens; 1,108 micro-USD            |
+| GPT-5.6 Luna Max                                          |       13,294 ms | eligible; scope and acceptance passed | 3,808 input, 1,050 cache-write, 297 output tokens; 1,171 micro-USD            |
+
+The retained attempts are `job_695562fa89b7552f42ff_a0001`,
+`job_45ad5481c8fdc941cbfe_a0001`, and
+`job_2704cae2485de3899de4_a0001`. All three produced equivalent minimal
+implementations, and all review packets remained advisory only. The Luna
+artifact scan found no credential. This tiny fixture proves route operation and
+measurement, not relative quality on Vesserin-scale implementation; that still
+requires the frozen product package.
 
 ## Observable promise
 

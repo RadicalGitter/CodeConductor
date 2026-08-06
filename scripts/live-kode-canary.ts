@@ -157,25 +157,27 @@ try {
     reasoningEffort: "high",
     isActive: true,
     createdAt: Date.now(),
+    isGPT5: false,
   };
+  const initialKodeConfig = JSON.stringify(
+    {
+      numStartups: 1,
+      thinkingMode: "enabled",
+      hasCompletedOnboarding: true,
+      modelProfiles: [profile],
+      modelPointers: {
+        main: served.id,
+        task: served.id,
+        compact: served.id,
+        quick: served.id,
+      },
+    },
+    null,
+    2,
+  );
   await writeFile(
     path.join(kodeConfig, "config.json"),
-    `${JSON.stringify(
-      {
-        numStartups: 1,
-        hasCompletedOnboarding: true,
-        thinkingMode: "enabled",
-        modelProfiles: [profile],
-        modelPointers: {
-          main: served.id,
-          task: served.id,
-          compact: served.id,
-          quick: served.id,
-        },
-      },
-      null,
-      2,
-    )}\n`,
+    initialKodeConfig,
     "utf8",
   );
 
