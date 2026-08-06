@@ -4,6 +4,13 @@ import { createConductorRuntimeFromEnvironment } from "../src/mcp/runtime.js";
 
 const repositoryPath = path.resolve(process.argv[2] ?? process.cwd());
 const baseRef = process.argv[3] ?? "HEAD";
+const allowedAdapterIds = (process.argv[4] ?? "kode")
+  .split(",")
+  .map((id) => id.trim())
+  .filter((id) => id.length > 0);
+if (allowedAdapterIds.length === 0) {
+  throw new Error("At least one allowed adapter ID is required.");
+}
 const runtime = createConductorRuntimeFromEnvironment();
 
 await runtime.dispatcher.start();
@@ -11,7 +18,7 @@ try {
   const sourceRun = await runtime.sources.compileAndEnqueue({
     repositoryPath,
     baseRef,
-    allowedAdapterIds: ["kode"],
+    allowedAdapterIds,
     includeExtensions: [".conductor"],
   });
   console.log(
