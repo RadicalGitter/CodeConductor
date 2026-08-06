@@ -17,18 +17,6 @@ export async function captureWorkerExecutionProfile(input: {
   now?: Date;
 }): Promise<WorkerExecutionProfile> {
   const unresolvedReasons: string[] = [];
-  const requestedModel = input.contract.worker.options.model;
-  const modelSelector =
-    typeof requestedModel === "string" && requestedModel.trim()
-      ? requestedModel
-      : undefined;
-  if (
-    input.adapter.description.modelIdentity === "required" &&
-    !modelSelector
-  ) {
-    unresolvedReasons.push("The job did not bind an explicit model selector");
-  }
-
   let declared:
     ReturnType<NonNullable<WorkerAdapter["profileEvidence"]>> | undefined;
   try {
@@ -42,6 +30,31 @@ export async function captureWorkerExecutionProfile(input: {
     );
   }
   unresolvedReasons.push(...(declared?.unresolvedReasons ?? []));
+
+  const requestedModel = input.contract.worker.options.model;
+  const jobModelSelector =
+    typeof requestedModel === "string" && requestedModel.trim()
+      ? requestedModel
+      : undefined;
+  const declaredModelSelector = declared?.modelSelector?.trim() || undefined;
+  const modelSelector = declaredModelSelector ?? jobModelSelector;
+  if (
+    declaredModelSelector &&
+    jobModelSelector &&
+    declaredModelSelector !== jobModelSelector
+  ) {
+    unresolvedReasons.push(
+      "The adapter model selector disagrees with the job model selector",
+    );
+  }
+  if (
+    input.adapter.description.modelIdentity === "required" &&
+    !modelSelector
+  ) {
+    unresolvedReasons.push(
+      "Neither the job nor the sealed adapter profile bound an explicit model selector",
+    );
+  }
 
   const candidates = new Map<
     string,

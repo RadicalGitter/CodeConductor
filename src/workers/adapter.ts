@@ -19,6 +19,7 @@ export interface WorkerProfileEvidence {
     path: string;
   }>;
   attributes?: Record<string, string>;
+  modelSelector?: string;
   unresolvedReasons?: string[];
 }
 

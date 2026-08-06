@@ -246,7 +246,10 @@ export async function assertReviewEvidenceState(
       fingerprint(contract.worker.options) ||
     manifest.workerProfile.invocationFingerprint !==
       fingerprint(manifest.invocation) ||
-    manifest.workerProfile.modelSelector !== modelSelector
+    (modelSelector !== undefined &&
+      manifest.workerProfile.modelSelector !== modelSelector) ||
+    (manifest.workerProfile.adapter.modelIdentity === "required" &&
+      manifest.workerProfile.modelSelector === undefined)
   ) {
     throw new ReviewEvidenceError(
       "corrupt",

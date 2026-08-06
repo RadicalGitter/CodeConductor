@@ -27,23 +27,23 @@ architect action.
 
 ## What is committed, experimental, and deferred
 
-| Element                                                         | Classification            | Current support                                               | Decision                                                            |
-| --------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------- |
-| High-concept co-design followed by delegated implementation     | committed direction       | Vesserin design authority and Conductor jobs exist separately | make this the first real product workflow                           |
-| Exact-revision, isolated proposal work                          | committed constraint      | implemented                                                   | preserve and harden                                                 |
-| Deterministic scope and acceptance evidence                     | committed constraint      | implemented, with eligibility gaps                            | seal before the pilot                                               |
-| A Vesserin-owned compiler/context adapter                       | committed direction       | planned only                                                  | build after core hardening                                          |
-| Source comments near implementation seams                       | committed affordance      | generic strict-JSON comments exist                            | use for the first pilot; add symbol binding only after evidence     |
-| Inexpensive workers writing most implementation bodies          | hypothesis                | one local-model canary and one accepted pilot leaf            | compare local and Luna API routes on frozen Vesserin packages       |
-| GPT-5.6 Luna API as an implementation worker                    | candidate route           | not integrated                                                | add a budgeted provider profile; promote only from matched evidence |
-| GPT-5.6 Luna API as an independent auditor of non-Luna work     | candidate route           | not integrated                                                | compare findings and downstream survival against no audit           |
-| Two simultaneous workers improving throughput                   | hypothesis                | deterministic fixtures only                                   | run paired sequential/concurrent experiments per provider route     |
-| Sonnet review and bounded correction                            | hypothesis                | review packet only                                            | add after evidence integrity; measure an ablation                   |
-| Worker self-review                                              | superseded                | deliberately absent                                           | do not restore under a new name                                     |
-| Token-state checkpoint micromanagement                          | superseded for production | outside this runtime                                          | omit from the workflow                                              |
-| Automatic bug discovery and fix proposals                       | committed direction       | Vesserin instruments partly built                             | stage from deterministic reports to bounded proposals               |
-| Automatic canonical merge                                       | not accepted              | absent                                                        | keep absent                                                         |
-| Generated modules or engine lineages inside experimental worlds | preserved dream           | verifier scaffold only                                        | reopen after a microVM boundary and Vesserin M4/M6 evidence         |
+| Element                                                         | Classification            | Current support                                               | Decision                                                        |
+| --------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------- |
+| High-concept co-design followed by delegated implementation     | committed direction       | Vesserin design authority and Conductor jobs exist separately | make this the first real product workflow                       |
+| Exact-revision, isolated proposal work                          | committed constraint      | implemented                                                   | preserve and harden                                             |
+| Deterministic scope and acceptance evidence                     | committed constraint      | implemented, with eligibility gaps                            | seal before the pilot                                           |
+| A Vesserin-owned compiler/context adapter                       | committed direction       | planned only                                                  | build after core hardening                                      |
+| Source comments near implementation seams                       | committed affordance      | generic strict-JSON comments exist                            | use for the first pilot; add symbol binding only after evidence |
+| Inexpensive workers writing most implementation bodies          | hypothesis                | one local-model canary and one accepted pilot leaf            | compare local and Luna API routes on frozen Vesserin packages   |
+| GPT-5.6 Luna API as an implementation worker                    | candidate route           | three-leaf package prepared; first monolith failed safely     | integrate only eligible leaves, then run a paid bounded canary  |
+| GPT-5.6 Luna API as an independent auditor of non-Luna work     | candidate route           | not integrated                                                | compare findings and downstream survival against no audit       |
+| Two simultaneous workers improving throughput                   | hypothesis                | deterministic fixtures only                                   | run paired sequential/concurrent experiments per provider route |
+| Sonnet review and bounded correction                            | hypothesis                | review packet only                                            | add after evidence integrity; measure an ablation               |
+| Worker self-review                                              | superseded                | deliberately absent                                           | do not restore under a new name                                 |
+| Token-state checkpoint micromanagement                          | superseded for production | outside this runtime                                          | omit from the workflow                                          |
+| Automatic bug discovery and fix proposals                       | committed direction       | Vesserin instruments partly built                             | stage from deterministic reports to bounded proposals           |
+| Automatic canonical merge                                       | not accepted              | absent                                                        | keep absent                                                     |
+| Generated modules or engine lineages inside experimental worlds | preserved dream           | verifier scaffold only                                        | reopen after a microVM boundary and Vesserin M4/M6 evidence     |
 
 ## Definition of the goal
 

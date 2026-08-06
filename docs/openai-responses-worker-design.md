@@ -1,11 +1,28 @@
 # OpenAI Responses worker adapter
 
-- Status: approved bootstrap design; implementation delegated as a proposal
+- Status: approved bootstrap design; three-leaf implementation package prepared
 - Owner intent: make GPT-5.6 Luna a measurable Conductor worker without giving
   the model new authority
 - First profiles: `luna-medium-v1` and `luna-max-v1`
 - Comparison authority: the later matched Vesserin experiment, not this adapter
   implementation
+
+## Bootstrap evidence and package shape
+
+The first monolithic local attempt is retained as a failed route. It changed two
+in-scope files, then Kode's accumulated request reached 69,031 tokens against a
+65,536-token slot. Conductor recorded a failed worker exit, skipped acceptance,
+and left the proposal ineligible; none of it entered the repository.
+
+The replacement package has three independent leaves with protected
+architect-authored oracles: provider profiles and cost accounting, the
+Responses/tool protocol runner, and the Conductor adapter/registry seam. The
+currently served KAT/APEX model has a 262,144-token KV allocation divided into
+four 65,536-token slots. Each replacement leaf therefore keeps a much smaller
+positive context pack. A proposed three-slot 98,304-token experiment would
+require a 294,912-token KV allocation and a controlled model-server restart; it
+is capacity evidence to gather, not a prerequisite silently assumed by this
+package.
 
 ## Observable promise
 
@@ -64,6 +81,12 @@ All properties are required. Reject malformed JSON, unknown tools, traversal,
 absolute paths, symlink escapes, out-of-scope paths, oversized tool payloads,
 and calls beyond the profile ceiling before mutation. Writes should be atomic.
 The final response may summarize work but cannot widen the proposal.
+
+This request shape follows the current OpenAI Responses and function-calling
+contracts retrieved on 2026-08-06. GPT-5.6 Luna supports the Responses endpoint,
+function calling, a 1,050,000-token context window, and reasoning efforts through
+`max`. For `store: false`, the runner preserves and resends every response output
+item, including reasoning items, before adding function-call outputs.
 
 Retry only transient transport failures, HTTP 408/409/429, and HTTP 5xx within
 the profile retry/request ceilings. Other provider errors are typed failures.

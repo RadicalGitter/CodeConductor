@@ -1,0 +1,71 @@
+{
+  "schema": "conductor.provider-profiles/v1",
+  "profiles": {
+    "luna-medium-v1": {
+      "provider": "openai-responses",
+      "baseUrl": "https://api.openai.com/v1",
+      "model": "gpt-5.6-luna",
+      "reasoningEffort": "medium",
+      "apiKeyEnvName": "OPENAI_API_KEY",
+      "rateCard": {
+        "id": "openai-standard-2026-07-30",
+        "effectiveDate": "2026-07-30",
+        "currency": "USD",
+        "uncachedInputMicroUsdPerMillion": 200000,
+        "cachedInputMicroUsdPerMillion": 20000,
+        "cacheWriteMicroUsdPerMillion": 250000,
+        "outputMicroUsdPerMillion": 1200000,
+        "longContext": {
+          "thresholdInputTokens": 272000,
+          "inputMultiplierNumerator": 2,
+          "inputMultiplierDenominator": 1,
+          "outputMultiplierNumerator": 3,
+          "outputMultiplierDenominator": 2
+        }
+      },
+      "budget": {
+        "requestTimeoutMs": 600000,
+        "maxRequests": 24,
+        "maxRetries": 2,
+        "maxToolCalls": 24,
+        "maxInputTokens": 200000,
+        "maxOutputTokens": 16384,
+        "maxToolOutputBytes": 1048576,
+        "maxCostMicroUsd": 250000
+      }
+    },
+    "luna-max-v1": {
+      "provider": "openai-responses",
+      "baseUrl": "https://api.openai.com/v1",
+      "model": "gpt-5.6-luna",
+      "reasoningEffort": "max",
+      "apiKeyEnvName": "OPENAI_API_KEY",
+      "rateCard": {
+        "id": "openai-standard-2026-07-30",
+        "effectiveDate": "2026-07-30",
+        "currency": "USD",
+        "uncachedInputMicroUsdPerMillion": 200000,
+        "cachedInputMicroUsdPerMillion": 20000,
+        "cacheWriteMicroUsdPerMillion": 250000,
+        "outputMicroUsdPerMillion": 1200000,
+        "longContext": {
+          "thresholdInputTokens": 272000,
+          "inputMultiplierNumerator": 2,
+          "inputMultiplierDenominator": 1,
+          "outputMultiplierNumerator": 3,
+          "outputMultiplierDenominator": 2
+        }
+      },
+      "budget": {
+        "requestTimeoutMs": 900000,
+        "maxRequests": 32,
+        "maxRetries": 2,
+        "maxToolCalls": 32,
+        "maxInputTokens": 250000,
+        "maxOutputTokens": 32768,
+        "maxToolOutputBytes": 1048576,
+        "maxCostMicroUsd": 1000000
+      }
+    }
+  }
+}

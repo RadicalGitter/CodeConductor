@@ -13,6 +13,12 @@ closure, evidence sealing, coherent package handoff, safe control surfaces,
 the Vesserin adapter, then the product pilot. New feature slices do not outrank
 those gates.
 
+The Luna candidate route is currently an owner-prepared three-leaf package, not
+an implemented adapter. Its first monolithic local attempt was retained as a
+context-overflow failure before acceptance. Provider profiles, protocol runner,
+and adapter wiring now have separate protected oracles so local route evidence
+can be gathered without repeating that oversized attempt.
+
 ## Slice 0 — independent bootstrap
 
 Private repository, authority contract, parity map, toolchain, no copied Kode

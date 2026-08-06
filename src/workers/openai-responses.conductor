@@ -1,104 +1,193 @@
 /* @conductor-contract
 {
-  "id": "runtime.openai-responses-worker-v1",
-  "objective": "Implement the approved provider-neutral OpenAI Responses worker adapter described in docs/openai-responses-worker-design.md, including strict owner profiles, secret-safe bounded file tools, retained usage/cost evidence, registry wiring, an example Luna medium/max profile file, and offline fake-server tests.",
+  "id": "runtime.openai-responses.profiles-v1",
+  "objective": "Implement the strict owner-controlled provider profile loader, resolver, canonical fingerprint, and integer micro-USD cost functions in src/contracts/provider-profile.ts. Make the protected provider-profile oracle pass without weakening its schema or embedding any credential.",
   "taskClass": "implementation",
   "adapterId": "kode",
   "adapterOptions": { "model": "main" },
   "scope": {
     "allowedPaths": [
       "src/contracts/provider-profile.ts",
-      "src/review/packet.ts",
-      "src/review/worker-profile.ts",
-      "src/workers/adapter.ts",
-      "src/workers/defaults.ts",
-      "src/workers/openai-responses.ts",
-      "src/workers/openai-responses-runner.ts",
-      "src/index.ts",
-      "test/adapters.test.ts",
-      "test/review-evidence.test.ts",
-      "test/openai-responses.test.ts",
       "config/provider-profiles.example.json"
     ],
-    "forbiddenPaths": [
-      "AGENTS.md",
-      "package.json",
-      "bun.lock",
-      "src/orchestrator",
-      "src/runtime",
-      "src/verification",
-      "src/sources",
-      "src/contracts/job.ts",
-      "src/contracts/attempt.ts",
-      "docs"
-    ],
+    "forbiddenPaths": ["test", "docs", "src/workers", "src/review"],
     "protectedPaths": [
       "AGENTS.md",
       "docs",
+      "test",
       "package.json",
       "bun.lock",
-      "src/orchestrator",
-      "src/runtime",
-      "src/verification",
-      "src/sources",
-      "src/contracts/job.ts",
-      "src/contracts/attempt.ts",
       "src/workers/openai-responses.conductor"
     ]
   },
   "contextRefs": [
     "AGENTS.md",
-    "docs/architecture.md",
-    "docs/roadmap.md",
-    "docs/source-contracts.md",
-    "docs/review-evidence-seal.md",
-    "docs/vesserin-backend-generation-plan.md",
+    "docs/openai-responses-worker-design.md",
+    "src/contracts/provider-profile.ts",
+    "test/provider-profile.test.ts",
+    "config/provider-profiles.example.json"
+  ],
+  "constraints": [
+    "The protected test is the owner oracle and must not be changed.",
+    "Unknown JSON properties fail; jobs never supply provider-owned model, endpoint, effort, key, rate, or budget fields.",
+    "The profile stores only the API-key environment variable name, never the secret value.",
+    "Cost is integer micro-USD with cached input and cache-write tokens excluded from ordinary input, and long-context multipliers applied exactly once.",
+    "Use no new dependency and preserve strict TypeScript."
+  ],
+  "escalateWhen": [
+    "The protected oracle contradicts the approved design.",
+    "Implementation requires widening the provider profile schema or adding a credential to repository data."
+  ],
+  "setup": [],
+  "acceptance": [
+    {
+      "profile": "bun-test",
+      "args": ["test/provider-profile.test.ts"],
+      "timeoutMs": 60000
+    }
+  ],
+  "timeoutMs": 1200000,
+  "retainWorkspace": true,
+  "executionBoundary": { "kind": "host-worktree" },
+  "dependsOn": [],
+  "priority": 30,
+  "enabled": true
+}
+@end-conductor-contract */
+
+/* @conductor-contract
+{
+  "id": "runtime.openai-responses.runner-v1",
+  "objective": "Implement the OpenAI Responses protocol runner in src/workers/openai-responses-runner.ts against the frozen request/evidence interfaces and protected offline oracle. Preserve reasoning output items across strict read_file/write_file tool turns, enforce scope and budgets before side effects, retry only transient failures, and emit secret-safe typed evidence.",
+  "taskClass": "implementation",
+  "adapterId": "kode",
+  "adapterOptions": { "model": "main" },
+  "scope": {
+    "allowedPaths": ["src/workers/openai-responses-runner.ts"],
+    "forbiddenPaths": ["test", "docs", "src/contracts", "src/review"],
+    "protectedPaths": [
+      "AGENTS.md",
+      "docs",
+      "test",
+      "package.json",
+      "bun.lock",
+      "src/contracts",
+      "src/runtime",
+      "src/verification",
+      "src/workers/openai-responses.conductor"
+    ]
+  },
+  "contextRefs": [
+    "AGENTS.md",
+    "docs/openai-responses-worker-design.md",
+    "src/contracts/provider-profile.ts",
+    "src/workers/openai-responses-runner.ts",
+    "test/openai-responses-runner.test.ts"
+  ],
+  "constraints": [
+    "The protected test is the owner oracle and must not be changed.",
+    "Use POST <profile baseUrl>/responses with store false, parallel_tool_calls false, profile reasoning effort, and profile max output tokens.",
+    "Preserve every response output item and return function_call_output with the exact call_id.",
+    "Expose only strict read_file and write_file tools; validate exact positive paths, traversal, symlink escape, payload bytes, tool counts, and cost before mutation.",
+    "Never print, persist, or include the API key in errors or evidence; do not retain provider response bodies in failures.",
+    "Use no shell tool, no new dependency, and no network in the test suite."
+  ],
+  "escalateWhen": [
+    "The protected oracle contradicts the approved design or current OpenAI Responses semantics.",
+    "Credential secrecy or positive file scope cannot be enforced inside the declared implementation file."
+  ],
+  "setup": [],
+  "acceptance": [
+    {
+      "profile": "bun-test",
+      "args": ["test/openai-responses-runner.test.ts"],
+      "timeoutMs": 90000
+    }
+  ],
+  "timeoutMs": 1800000,
+  "retainWorkspace": true,
+  "executionBoundary": { "kind": "host-worktree" },
+  "dependsOn": [],
+  "priority": 20,
+  "enabled": true
+}
+@end-conductor-contract */
+
+/* @conductor-contract
+{
+  "id": "runtime.openai-responses.adapter-v1",
+  "objective": "Implement the OpenAI Responses worker adapter, default-registry wiring, and package export behind the frozen adapter/profile-evidence seam. Jobs may select only a profile ID; the invocation must launch the checked runner with positively selected job metadata while keeping provider-owned values and the secret out of persisted arguments.",
+  "taskClass": "implementation",
+  "adapterId": "kode",
+  "adapterOptions": { "model": "main" },
+  "scope": {
+    "allowedPaths": [
+      "src/workers/openai-responses.ts",
+      "src/workers/defaults.ts",
+      "src/index.ts"
+    ],
+    "forbiddenPaths": ["test", "docs", "src/contracts", "src/review"],
+    "protectedPaths": [
+      "AGENTS.md",
+      "docs",
+      "test",
+      "package.json",
+      "bun.lock",
+      "src/contracts",
+      "src/review",
+      "src/runtime",
+      "src/verification",
+      "src/workers/adapter.ts",
+      "src/workers/openai-responses-runner.ts",
+      "src/workers/openai-responses.conductor"
+    ]
+  },
+  "contextRefs": [
+    "AGENTS.md",
     "docs/openai-responses-worker-design.md",
     "src/contracts/job.ts",
-    "src/contracts/attempt.ts",
+    "src/contracts/provider-profile.ts",
     "src/review/worker-profile.ts",
     "src/review/packet.ts",
+    "src/runtime/environment.ts",
+    "src/runtime/executable.ts",
     "src/workers/adapter.ts",
     "src/workers/defaults.ts",
     "src/workers/kode.ts",
-    "src/runtime/environment.ts",
-    "src/runtime/process-runner.ts",
-    "test/adapters.test.ts",
-    "test/review-evidence.test.ts"
+    "src/workers/openai-responses.ts",
+    "src/workers/openai-responses-runner.ts",
+    "src/index.ts",
+    "test/openai-responses-adapter.test.ts"
   ],
   "constraints": [
-    "Treat docs/openai-responses-worker-design.md as the frozen design contract.",
-    "Jobs select only an owner provider-profile ID; endpoint, key, model, effort, rate card, and budgets remain profile-owned.",
-    "Never persist or print the API key and never place it in process arguments.",
-    "Use the Responses API with store false, parallel_tool_calls false, strict read_file/write_file tools, and no shell capability.",
-    "Preserve current Kode/Codex behavior, existing scope enforcement, process containment, acceptance, and sealed review evidence.",
-    "Add no runtime dependency and make every test offline with a local fake HTTP server.",
-    "Emit a typed secret-safe JSONL run record with exact usage, elapsed time, retries, request IDs, and integer micro-USD cost.",
-    "Do not describe checks as run; Conductor executes the declared acceptance commands after the worker returns."
+    "The protected test is the owner oracle and must not be changed.",
+    "Reject every adapter option other than one non-empty profile ID.",
+    "This leaf runs independently of the profile-helper implementation leaf; parse the sealed profile file through the exported owner schema instead of calling unfinished helper bodies.",
+    "Load and seal the owner profile file, expose its model through profileEvidence.modelSelector, and pass only the selected key environment value to the worker process.",
+    "Never place the key, endpoint, model, effort, rate card, or budget in persisted invocation arguments.",
+    "Preserve existing Kode and Codex registry behavior and add no new dependency."
   ],
   "escalateWhen": [
-    "A required implementation change falls outside the declared allowed paths.",
-    "The approved design conflicts with a settled Conductor invariant or existing protected test.",
-    "Credential secrecy cannot be preserved through the current process invocation and evidence model.",
-    "Supporting a provider requires weakening scope, containment, acceptance, or proposal-only authority."
+    "The protected oracle contradicts the approved design.",
+    "The adapter cannot bind the runner and owner profile as immutable evidence without changing protected review semantics."
   ],
   "setup": [],
   "acceptance": [
     {
       "profile": "bun-test",
       "args": [
-        "test/openai-responses.test.ts",
+        "test/openai-responses-adapter.test.ts",
         "test/adapters.test.ts",
         "test/review-evidence.test.ts"
       ],
       "timeoutMs": 180000
     }
   ],
-  "timeoutMs": 3600000,
+  "timeoutMs": 1800000,
   "retainWorkspace": true,
   "executionBoundary": { "kind": "host-worktree" },
   "dependsOn": [],
-  "priority": 20,
+  "priority": 10,
   "enabled": true
 }
 @end-conductor-contract */
