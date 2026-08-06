@@ -4,9 +4,9 @@
 - First product target: Vesserin Observation Projection v0
 - Governing review: Ultra adversarial review of commit `5bf3cf2`
 - Date: 2026-08-04
-- Route update: GPT-5.6 Luna implementation adapter and matched generic canary
-  completed 2026-08-06; neither implementation nor audit route is promoted
-  without a matched Vesserin comparison
+- Route update: GPT-5.6 Luna implementation adapter, matched generic canary,
+  and matched Vesserin M1.5 comparison completed 2026-08-06; neither
+  implementation nor audit route is promoted
 
 ## Intent anchor
 
@@ -28,23 +28,23 @@ architect action.
 
 ## What is committed, experimental, and deferred
 
-| Element                                                         | Classification            | Current support                                               | Decision                                                        |
-| --------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------- |
-| High-concept co-design followed by delegated implementation     | committed direction       | Vesserin design authority and Conductor jobs exist separately | make this the first real product workflow                       |
-| Exact-revision, isolated proposal work                          | committed constraint      | implemented                                                   | preserve and harden                                             |
-| Deterministic scope and acceptance evidence                     | committed constraint      | implemented, with eligibility gaps                            | seal before the pilot                                           |
-| A Vesserin-owned compiler/context adapter                       | committed direction       | planned only                                                  | build after core hardening                                      |
-| Source comments near implementation seams                       | committed affordance      | generic strict-JSON comments exist                            | use for the first pilot; add symbol binding only after evidence |
-| Inexpensive workers writing most implementation bodies          | hypothesis                | one local-model canary and one accepted pilot leaf            | compare local and Luna API routes on frozen Vesserin packages   |
-| GPT-5.6 Luna API as an implementation worker                    | candidate route           | adapter and paid generic Medium/Max canaries pass             | run the matched frozen Vesserin package                         |
-| GPT-5.6 Luna API as an independent auditor of non-Luna work     | candidate route           | not integrated                                                | compare findings and downstream survival against no audit       |
-| Two simultaneous workers improving throughput                   | hypothesis                | deterministic fixtures only                                   | run paired sequential/concurrent experiments per provider route |
-| Sonnet review and bounded correction                            | hypothesis                | review packet only                                            | add after evidence integrity; measure an ablation               |
-| Worker self-review                                              | superseded                | deliberately absent                                           | do not restore under a new name                                 |
-| Token-state checkpoint micromanagement                          | superseded for production | outside this runtime                                          | omit from the workflow                                          |
-| Automatic bug discovery and fix proposals                       | committed direction       | Vesserin instruments partly built                             | stage from deterministic reports to bounded proposals           |
-| Automatic canonical merge                                       | not accepted              | absent                                                        | keep absent                                                     |
-| Generated modules or engine lineages inside experimental worlds | preserved dream           | verifier scaffold only                                        | reopen after a microVM boundary and Vesserin M4/M6 evidence     |
+| Element                                                         | Classification            | Current support                                                           | Decision                                                        |
+| --------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| High-concept co-design followed by delegated implementation     | committed direction       | Vesserin design authority and Conductor jobs exist separately             | make this the first real product workflow                       |
+| Exact-revision, isolated proposal work                          | committed constraint      | implemented                                                               | preserve and harden                                             |
+| Deterministic scope and acceptance evidence                     | committed constraint      | implemented, with eligibility gaps                                        | seal before the pilot                                           |
+| A Vesserin-owned compiler/context adapter                       | committed direction       | planned only                                                              | build after core hardening                                      |
+| Source comments near implementation seams                       | committed affordance      | generic strict-JSON comments exist                                        | use for the first pilot; add symbol binding only after evidence |
+| Inexpensive workers writing most implementation bodies          | hypothesis                | one accepted local leaf; matched M1.5 local/Max proposals were ineligible | improve route reliability, then repeat a frozen package         |
+| GPT-5.6 Luna API as an implementation worker                    | candidate route           | strongest M1.5 near-pass; cumulative-context budget prevented eligibility | reduce repeated context and prove unattended acceptance         |
+| GPT-5.6 Luna API as an independent auditor of non-Luna work     | candidate route           | not integrated                                                            | compare findings and downstream survival against no audit       |
+| Two simultaneous workers improving throughput                   | hypothesis                | deterministic fixtures only                                               | run paired sequential/concurrent experiments per provider route |
+| Sonnet review and bounded correction                            | hypothesis                | review packet only                                                        | add after evidence integrity; measure an ablation               |
+| Worker self-review                                              | superseded                | deliberately absent                                                       | do not restore under a new name                                 |
+| Token-state checkpoint micromanagement                          | superseded for production | outside this runtime                                                      | omit from the workflow                                          |
+| Automatic bug discovery and fix proposals                       | committed direction       | Vesserin instruments partly built                                         | stage from deterministic reports to bounded proposals           |
+| Automatic canonical merge                                       | not accepted              | absent                                                                    | keep absent                                                     |
+| Generated modules or engine lineages inside experimental worlds | preserved dream           | verifier scaffold only                                                    | reopen after a microVM boundary and Vesserin M4/M6 evidence     |
 
 ## Definition of the goal
 
@@ -151,8 +151,30 @@ acceptance, and advisory review eligibility through direct llama.cpp KAT/APEX,
 Luna Medium, and Luna Max. Medium cost 1,108 micro-USD and took 30,178 ms of
 worker time; Max cost 1,171 micro-USD and took 13,294 ms; the local worker took
 18,164 ms and its hardware/electricity cost was not measured. These are
-route-smoke figures, not a product-quality result. The frozen Vesserin package
-remains the first meaningful routing comparison.
+route-smoke figures, not a product-quality result.
+
+The first meaningful matched Vesserin comparison followed on the M1.5
+party-movement composition package. After an oversized 25-file context attempt
+failed, both routes received the same compact three-file packet, protected
+oracle, exact revision, allowed paths, setup, and focused acceptance deck.
+Local v2 took about 610 seconds and contained one facade-call bug; Max v2 took
+about 340 seconds and contained one fingerprint-width bug. With setup and a
+clarified facade contract, local v3 took about 410 seconds but failed parsing
+because it duplicated an interface. Max v3 took about 587 seconds and manually
+passed all 41 focused assertions, but failed full TypeScript checking and had
+already exceeded the profile's maximum cumulative-input budget before formal
+acceptance. Across the failed/near-pass Max attempts, reported actual API cost
+was $0.365319.
+
+No matched attempt was formally review-eligible. The architect integrated and
+corrected the Max proposal in Vesserin because it was the strongest proposal,
+not because Conductor accepted it. Max showed better product-code quality than
+the local route on this package, but the Responses adapter's one-file-per-turn
+tool pattern repeatedly resent a growing context and prevented unattended
+completion within the maximum schema budget. Do not promote either route until
+that context-amplification problem is reduced and a representative package
+passes setup, scope, focused acceptance, full checks, and evidence sealing
+without architect repair.
 
 ## Authority model
 
