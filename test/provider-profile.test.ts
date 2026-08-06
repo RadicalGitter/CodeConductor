@@ -96,6 +96,15 @@ test("profile fingerprints are canonical and secret values are not profile data"
   expect(fingerprintProviderProfile(profile)).toBe(
     fingerprintProviderProfile(reordered),
   );
+  expect(fingerprintProviderProfile(profile)).not.toBe(
+    fingerprintProviderProfile({
+      ...profile,
+      budget: {
+        ...profile.budget,
+        maxCostMicroUsd: profile.budget.maxCostMicroUsd + 1,
+      },
+    }),
+  );
   expect(JSON.stringify(profile)).not.toContain("sk-");
   expect(profile.apiKeyEnvName).toBe("OPENAI_API_KEY");
 });
@@ -126,6 +135,45 @@ test("cost accounting separates cache categories and applies long-context pricin
       rateCard,
     ),
   ).toBe(138_000);
+
+  expect(
+    calculateProviderCostMicroUsd(
+      {
+        inputTokens: 300_000,
+        cachedInputTokens: 100_000,
+        cacheWriteTokens: 0,
+        outputTokens: 10_000,
+        reasoningTokens: 5_000,
+      },
+      rateCard,
+    ),
+  ).toBe(102_000);
+
+  expect(
+    calculateProviderCostMicroUsd(
+      {
+        inputTokens: 1,
+        cachedInputTokens: 0,
+        cacheWriteTokens: 0,
+        outputTokens: 0,
+        reasoningTokens: 0,
+      },
+      rateCard,
+    ),
+  ).toBe(1);
+
+  expect(() =>
+    calculateProviderCostMicroUsd(
+      {
+        inputTokens: 1,
+        cachedInputTokens: 1,
+        cacheWriteTokens: 1,
+        outputTokens: 0,
+        reasoningTokens: 0,
+      },
+      rateCard,
+    ),
+  ).toThrow();
   expect(estimateProviderRequestCostMicroUsd(10_000, 5_000, rateCard)).toBe(
     8_000,
   );
