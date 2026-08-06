@@ -38,7 +38,13 @@
     "The protected oracle contradicts the approved design.",
     "Implementation requires widening the provider profile schema or adding a credential to repository data."
   ],
-  "setup": [],
+  "setup": [
+    {
+      "profile": "bun-install",
+      "args": [],
+      "timeoutMs": 180000
+    }
+  ],
   "acceptance": [
     {
       "profile": "bun-test",
@@ -96,7 +102,13 @@
     "The protected oracle contradicts the approved design or current OpenAI Responses semantics.",
     "Credential secrecy or positive file scope cannot be enforced inside the declared implementation file."
   ],
-  "setup": [],
+  "setup": [
+    {
+      "profile": "bun-install",
+      "args": [],
+      "timeoutMs": 180000
+    }
+  ],
   "acceptance": [
     {
       "profile": "bun-test",
@@ -171,7 +183,13 @@
     "The protected oracle contradicts the approved design.",
     "The adapter cannot bind the runner and owner profile as immutable evidence without changing protected review semantics."
   ],
-  "setup": [],
+  "setup": [
+    {
+      "profile": "bun-install",
+      "args": [],
+      "timeoutMs": 180000
+    }
+  ],
   "acceptance": [
     {
       "profile": "bun-test",

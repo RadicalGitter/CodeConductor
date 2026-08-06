@@ -10,6 +10,11 @@
       "executable": "C:\\Users\\YOUR_USER\\.bun\\bin\\bun.exe",
       "argsPrefix": ["test", "--"],
       "inheritEnv": []
+    },
+    "bun-install": {
+      "executable": "C:\\Users\\YOUR_USER\\.bun\\bin\\bun.exe",
+      "argsPrefix": ["install", "--frozen-lockfile"],
+      "inheritEnv": []
     }
   }
 }
