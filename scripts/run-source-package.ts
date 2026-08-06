@@ -12,7 +12,7 @@ try {
     repositoryPath,
     baseRef,
     allowedAdapterIds: ["kode"],
-    includeExtensions: [".ts"],
+    includeExtensions: [".conductor"],
   });
   console.log(
     JSON.stringify({

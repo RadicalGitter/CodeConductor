@@ -43,7 +43,7 @@
       "src/sources",
       "src/contracts/job.ts",
       "src/contracts/attempt.ts",
-      "src/workers/openai-responses.contract.ts"
+      "src/workers/openai-responses.conductor"
     ]
   },
   "contextRefs": [
@@ -102,6 +102,3 @@
   "enabled": true
 }
 @end-conductor-contract */
-
-export const openAiResponsesWorkerContract =
-  "runtime.openai-responses-worker-v1" as const;
