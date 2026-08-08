@@ -11,6 +11,13 @@ const allowedAdapterIds = (process.argv[4] ?? "kode")
 if (allowedAdapterIds.length === 0) {
   throw new Error("At least one allowed adapter ID is required.");
 }
+const includeExtensions = (process.argv[5] ?? ".conductor")
+  .split(",")
+  .map((extension) => extension.trim())
+  .filter((extension) => extension.length > 0);
+if (includeExtensions.length === 0) {
+  throw new Error("At least one source-contract extension is required.");
+}
 const runtime = createConductorRuntimeFromEnvironment();
 
 await runtime.dispatcher.start();
@@ -19,7 +26,7 @@ try {
     repositoryPath,
     baseRef,
     allowedAdapterIds,
-    includeExtensions: [".conductor"],
+    includeExtensions,
   });
   console.log(
     JSON.stringify({
