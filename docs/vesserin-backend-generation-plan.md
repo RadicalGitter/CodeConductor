@@ -104,6 +104,29 @@ Conductor and Vesserin `AGENTS.md` files advertise the affordance and point to
 project authority. They stay concise; the procedure remains in the skill, and
 permissions remain in runtime policy rather than prompt text.
 
+### Project-owned affordance campaigns
+
+Vesserin now owns a second, narrower operating procedure for generative design
+campaigns. A checked campaign manifest compiles into ordinary Conductor
+analysis jobs with one exact proposal-pack path per subject and an optional
+dependent advisory review. Vesserin supplies the proposal and review schemas,
+semantic constraints, and acceptance command; Conductor supplies the frozen
+jobs, resource profiles, isolated worktrees, proposal lineage, deterministic
+scope checks, and evidence.
+
+This is an intended project-plugin use of the generic source-contract graph,
+not a new core task type. The worker outputs are untrusted design proposals.
+They cannot write Vesserin findings, accepted affordance definitions, gameplay
+code, tests, or documentation, and a successful review cannot promote them.
+The reusable `$run-affordance-campaign` skill prepares and audits bounded runs;
+`$build-with-conductor` remains the general implementation-package procedure.
+
+The first checked but disabled campaign asks about ten common adventuring
+items. Before paying for that full graph, run a two- or three-subject canary and
+measure useful candidates per owner review minute as well as API cost. Do not
+add Vesserin campaign semantics to Conductor core unless another project proves
+the same contract is genuinely generic.
+
 ## Candidate Luna API route
 
 The July 30, 2026 GPT-5.6 Luna price reduction materially changed the worker
