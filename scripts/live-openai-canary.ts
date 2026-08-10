@@ -153,6 +153,8 @@ try {
         changedPaths: verification.scope.changedPaths,
         model: workerEvidence.requestedModel,
         reasoningEffort: workerEvidence.reasoningEffort,
+        requestedServiceTier: workerEvidence.requestedServiceTier,
+        returnedServiceTiers: workerEvidence.returnedServiceTiers,
         requestCount: workerEvidence.requestCount,
         retryCount: workerEvidence.retryCount,
         toolCallCount: workerEvidence.toolCallCount,

@@ -22,6 +22,9 @@ also complete: Max produced the strongest near-pass, local produced weaker
 near-passes/failures, and neither route reached formal unattended eligibility.
 No route is promoted until a representative package completes without
 architect repair; mixed bounded routing remains the next practical lane.
+Luna Max owner profiles now request OpenAI Fast (`priority`) explicitly, price
+against the dated Fast rate card, and retain requested-versus-returned tier
+evidence so provider fallback cannot masquerade as Fast execution.
 
 ## Slice 0 — independent bootstrap
 

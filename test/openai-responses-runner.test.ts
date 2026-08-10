@@ -87,6 +87,8 @@ test("Responses tool loop preserves output items and applies only bounded writes
     expect(evidence.status).toBe("completed");
     expect(evidence.requestCount).toBe(3);
     expect(evidence.toolCallCount).toBe(2);
+    expect(evidence.requestedServiceTier).toBe("priority");
+    expect(evidence.returnedServiceTiers).toEqual(["priority"]);
     expect(evidence.requestIds).toEqual(["req-read", "req-write", "req-final"]);
     expect(evidence.responseIds).toEqual([
       "resp-read",
@@ -110,6 +112,7 @@ test("Responses tool loop preserves output items and applies only bounded writes
       store: false,
       parallel_tool_calls: false,
       reasoning: { effort: "medium" },
+      service_tier: "priority",
       max_output_tokens: 4_096,
     });
     expect(JSON.stringify(bodies[0])).not.toContain("unselected-private-data");
@@ -274,6 +277,42 @@ test("transient provider failures retry within the owner profile ceiling", async
   }
 });
 
+test("records provider service-tier fallback without pretending Fast was honored", async () => {
+  const fixture = createFixture();
+  try {
+    const evidence = await runOpenAIResponsesWorker(fixture.request, {
+      fetch: async () =>
+        response(
+          "resp-standard",
+          [
+            {
+              type: "message",
+              id: "msg-standard",
+              role: "assistant",
+              status: "completed",
+              content: [{ type: "output_text", text: "done", annotations: [] }],
+            },
+          ],
+          "req-standard",
+          "default",
+        ),
+      environment: { OPENAI_API_KEY: secret },
+      now: increasingClock(),
+      sleep: async () => undefined,
+    });
+    expect(evidence).toMatchObject({
+      status: "completed",
+      requestedServiceTier: "priority",
+      returnedServiceTiers: ["default"],
+    });
+    expect(evidence.evidenceLimitations).toContain(
+      "Provider response reported a different service tier than requested",
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 function createFixture() {
   const workspace = mkdtempSync(
     path.join(os.tmpdir(), "conductor-openai-runner-"),
@@ -292,6 +331,7 @@ function createFixture() {
     baseUrl: "https://api.openai.test/v1",
     model: "gpt-5.6-luna",
     reasoningEffort: "medium",
+    serviceTier: "priority",
     apiKeyEnvName: "OPENAI_API_KEY",
     rateCard: {
       id: "test-rate",
@@ -340,6 +380,7 @@ function response(
   id: string,
   output: unknown[],
   requestId = `req-${id}`,
+  serviceTier = "priority",
 ): Response {
   return Response.json(
     {
@@ -347,6 +388,7 @@ function response(
       object: "response",
       status: "completed",
       model: "gpt-5.6-luna",
+      service_tier: serviceTier,
       output,
       usage: {
         input_tokens: 100,

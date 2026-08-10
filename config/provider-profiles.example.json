@@ -6,6 +6,7 @@
       "baseUrl": "https://api.openai.com/v1",
       "model": "gpt-5.6-luna",
       "reasoningEffort": "medium",
+      "serviceTier": "default",
       "apiKeyEnvName": "OPENAI_API_KEY",
       "rateCard": {
         "id": "openai-standard-2026-07-30",
@@ -39,15 +40,16 @@
       "baseUrl": "https://api.openai.com/v1",
       "model": "gpt-5.6-luna",
       "reasoningEffort": "max",
+      "serviceTier": "priority",
       "apiKeyEnvName": "OPENAI_API_KEY",
       "rateCard": {
-        "id": "openai-standard-2026-07-30",
-        "effectiveDate": "2026-07-30",
+        "id": "openai-fast-2026-08-10",
+        "effectiveDate": "2026-08-10",
         "currency": "USD",
-        "uncachedInputMicroUsdPerMillion": 200000,
-        "cachedInputMicroUsdPerMillion": 20000,
-        "cacheWriteMicroUsdPerMillion": 250000,
-        "outputMicroUsdPerMillion": 1200000,
+        "uncachedInputMicroUsdPerMillion": 400000,
+        "cachedInputMicroUsdPerMillion": 40000,
+        "cacheWriteMicroUsdPerMillion": 400000,
+        "outputMicroUsdPerMillion": 2400000,
         "longContext": {
           "thresholdInputTokens": 272000,
           "inputMultiplierNumerator": 2,
@@ -64,7 +66,7 @@
         "maxInputTokens": 1050000,
         "maxOutputTokens": 64000,
         "maxToolOutputBytes": 1048576,
-        "maxCostMicroUsd": 750000
+        "maxCostMicroUsd": 1250000
       }
     }
   }

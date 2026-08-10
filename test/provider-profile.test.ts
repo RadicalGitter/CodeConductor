@@ -36,6 +36,7 @@ const profile: ProviderProfile = {
   baseUrl: "https://api.openai.com/v1",
   model: "gpt-5.6-luna",
   reasoningEffort: "medium",
+  serviceTier: "default",
   apiKeyEnvName: "OPENAI_API_KEY",
   rateCard,
   budget: {
@@ -82,12 +83,22 @@ test("provider profiles load strictly and resolve only owner-bound ids", () => {
   }
 });
 
+test("legacy v1 profiles default to Standard service without widening job authority", () => {
+  const { serviceTier: _serviceTier, ...legacyProfile } = profile;
+  const parsed = providerProfileFileSchema.parse({
+    schema: "conductor.provider-profiles/v1",
+    profiles: { legacy: legacyProfile },
+  });
+  expect(parsed.profiles.legacy?.serviceTier).toBe("default");
+});
+
 test("profile fingerprints are canonical and secret values are not profile data", () => {
   const reordered: ProviderProfile = {
     budget: { ...profile.budget },
     rateCard: { ...profile.rateCard },
     apiKeyEnvName: profile.apiKeyEnvName,
     reasoningEffort: profile.reasoningEffort,
+    serviceTier: profile.serviceTier,
     model: profile.model,
     baseUrl: profile.baseUrl,
     provider: profile.provider,
@@ -189,8 +200,9 @@ test("the checked example exposes Luna medium/max without embedding a key", () =
   ]);
   const max = parsed.profiles["luna-max-v1"];
   expect(max?.reasoningEffort).toBe("max");
+  expect(max?.serviceTier).toBe("priority");
   expect(max?.budget.maxInputTokens).toBe(1_050_000);
-  expect(max?.budget.maxCostMicroUsd).toBeLessThanOrEqual(750_000);
+  expect(max?.budget.maxCostMicroUsd).toBeLessThanOrEqual(1_250_000);
   expect(raw).not.toContain("sk-");
 
   const environmentExample = readFileSync(path.resolve(".env.example"), "utf8");

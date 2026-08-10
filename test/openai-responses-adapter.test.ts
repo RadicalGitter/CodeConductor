@@ -170,6 +170,7 @@ function createFixture() {
           baseUrl: "https://api.openai.com/v1",
           model: "gpt-5.6-luna",
           reasoningEffort: "medium",
+          serviceTier: "default",
           apiKeyEnvName: "OPENAI_API_KEY",
           rateCard: {
             id: "openai-standard-2026-07-30",

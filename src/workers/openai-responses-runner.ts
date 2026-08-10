@@ -44,6 +44,8 @@ export interface OpenAIResponsesRunEvidence {
   requestedModel: string;
   returnedModels: string[];
   reasoningEffort: ProviderProfile["reasoningEffort"];
+  requestedServiceTier: ProviderProfile["serviceTier"];
+  returnedServiceTiers: string[];
   rateCardId: string;
   requestIds: string[];
   responseIds: string[];
@@ -84,6 +86,7 @@ interface RunState {
   requestIds: string[];
   responseIds: string[];
   returnedModels: string[];
+  returnedServiceTiers: string[];
   requestCount: number;
   retryCount: number;
   toolCallCount: number;
@@ -116,6 +119,7 @@ export async function runOpenAIResponsesWorker(
     requestIds: [],
     responseIds: [],
     returnedModels: [],
+    returnedServiceTiers: [],
     requestCount: 0,
     retryCount: 0,
     toolCallCount: 0,
@@ -209,7 +213,11 @@ export async function runOpenAIResponsesWorker(
       );
     }
     const response = providerResult.response!;
-    const parsed = await parseProviderResponse(response, state);
+    const parsed = await parseProviderResponse(
+      response,
+      state,
+      request.profile.serviceTier,
+    );
     if (parsed.failure) {
       return evidence(
         request,
@@ -292,6 +300,7 @@ async function sendProviderRequest(input: {
     store: false,
     parallel_tool_calls: false,
     reasoning: { effort: request.profile.reasoningEffort },
+    service_tier: request.profile.serviceTier,
     max_output_tokens: request.profile.budget.maxOutputTokens,
     tools: toolDefinitions,
   });
@@ -363,6 +372,7 @@ async function sendProviderRequest(input: {
 async function parseProviderResponse(
   response: Response,
   state: RunState,
+  requestedServiceTier: ProviderProfile["serviceTier"],
 ): Promise<{
   output?: unknown[];
   usage?: ProviderTokenUsage;
@@ -397,6 +407,25 @@ async function parseProviderResponse(
   ) {
     state.returnedModels.push(parsed.model);
   }
+  if (
+    typeof parsed.service_tier === "string" &&
+    parsed.service_tier.length > 0
+  ) {
+    if (!state.returnedServiceTiers.includes(parsed.service_tier)) {
+      state.returnedServiceTiers.push(parsed.service_tier);
+    }
+    if (!serviceTiersMatch(requestedServiceTier, parsed.service_tier)) {
+      addLimitation(
+        state.evidenceLimitations,
+        "Provider response reported a different service tier than requested",
+      );
+    }
+  } else {
+    addLimitation(
+      state.evidenceLimitations,
+      "Provider did not report its service tier",
+    );
+  }
   const usage = parseUsage(parsed.usage, state.evidenceLimitations);
   if (!usage) {
     return {
@@ -407,6 +436,12 @@ async function parseProviderResponse(
     };
   }
   return { output: parsed.output, usage };
+}
+
+function serviceTiersMatch(requested: string, returned: string): boolean {
+  const normalize = (value: string) =>
+    value === "fast" || value === "priority" ? "priority" : value.toLowerCase();
+  return normalize(requested) === normalize(returned);
 }
 
 function parseUsage(
@@ -546,6 +581,8 @@ function evidence(
     requestedModel: request.profile.model,
     returnedModels: [...state.returnedModels],
     reasoningEffort: request.profile.reasoningEffort,
+    requestedServiceTier: request.profile.serviceTier,
+    returnedServiceTiers: [...state.returnedServiceTiers],
     rateCardId: request.profile.rateCard.id,
     requestIds: [...state.requestIds],
     responseIds: [...state.responseIds],

@@ -60,6 +60,15 @@ artifact scan found no credential. This tiny fixture proves route operation and
 measurement, not relative quality on Vesserin-scale implementation; that still
 requires the frozen product package.
 
+The Fast-mode wiring was then exercised natively on 2026-08-10 with the same
+bounded Luna Max canary. Attempt `job_f13e3d681bd62d2fde48_a0001` completed in
+15,800 ms, passed scope and acceptance, and remained advisory. It requested
+`service_tier: "priority"` and the Responses API returned `priority`; no retry
+occurred. The run used 3,861 input tokens, 1,108 reported cache-write tokens,
+375 output tokens (200 reasoning), and cost 2,445 micro-USD under the dated Fast
+rate card. This proves the real Conductor route and evidence fields, not only a
+direct endpoint probe.
+
 ## Observable promise
 
 A source-authored Conductor job selects one owner-controlled provider profile.
@@ -73,7 +82,8 @@ and integration boundaries.
 ## Authority boundary
 
 - A job may name only a provider-profile ID. It may not supply an endpoint,
-  credential, model, reasoning effort, rate card, or provider budget.
+  credential, model, reasoning effort, service tier, rate card, or provider
+  budget.
 - The owner-controlled profile file is outside source-authored job authority and
   is fingerprinted as worker configuration evidence.
 - The API key is read from the environment name declared by the selected owner
@@ -89,7 +99,8 @@ and integration boundaries.
 The loader accepts strict JSON with schema
 `conductor.provider-profiles/v1`. Each profile binds:
 
-- provider `openai-responses`, base URL, model, and reasoning effort;
+- provider `openai-responses`, base URL, model, reasoning effort, and service
+  tier;
 - the API-key environment variable name;
 - request timeout, request count, retry count, tool-call count, input-token,
   output-token, and micro-USD ceilings;
@@ -97,8 +108,18 @@ The loader accepts strict JSON with schema
   uncached input, cached input, cache writes when reported, and output.
 
 Unknown properties fail validation. Profiles are selected by ID before any
-network request. The example file documents Luna medium and max but contains no
-secret.
+network request. Older v1 profiles without a service tier parse as `default` so
+upgrading cannot silently buy Fast capacity. The example file keeps Medium on
+Standard and binds Luna Max to the API's `priority` tier, now marketed as Fast,
+but contains no secret.
+
+The checked Fast rate card is dated 2026-08-10. For Luna prompts through 272K
+tokens it records $0.40 per million uncached input tokens, $0.04 per million
+cached input tokens, and $2.40 per million output tokens. Above 272K input, it
+records $0.80, $0.08, and $3.60 respectively. Cache writes are conservatively
+costed as uncached input because the API does not currently report a separate
+published Fast cache-write price. The owner may retain Standard profiles for
+economy, but the Max routes use Fast because reviewer latency is their purpose.
 
 ## Machine-local credential setup
 
@@ -127,9 +148,9 @@ do not respond by silently raising spend or context ceilings.
 
 Use `POST <baseUrl>/responses` with `store: false`,
 `parallel_tool_calls: false`, the profile-bound model and reasoning effort, and
-the profile-bound maximum output tokens. Preserve every returned output item in
-the next request so reasoning/function-call continuity works when storage is
-disabled.
+the profile-bound `service_tier` and maximum output tokens. Preserve every
+returned output item in the next request so reasoning/function-call continuity
+works when storage is disabled.
 
 Expose strict custom function tools with `additionalProperties: false`:
 
@@ -141,11 +162,15 @@ absolute paths, symlink escapes, out-of-scope paths, oversized tool payloads,
 and calls beyond the profile ceiling before mutation. Writes should be atomic.
 The final response may summarize work but cannot widen the proposal.
 
-This request shape follows the current OpenAI Responses and function-calling
-contracts retrieved on 2026-08-06. GPT-5.6 Luna supports the Responses endpoint,
-function calling, a 1,050,000-token context window, and reasoning efforts through
-`max`. For `store: false`, the runner preserves and resends every response output
-item, including reasoning items, before adding function-call outputs.
+This request shape follows the current OpenAI Responses, Fast mode, and
+function-calling contracts retrieved on 2026-08-10. GPT-5.6 Luna supports the
+Responses endpoint, function calling, a 1,050,000-token context window, and
+reasoning efforts through `max`. Fast and reasoning effort are independent:
+Max still controls how deeply Luna reasons, while `service_tier: "priority"`
+requests the faster processing lane. A direct paid probe completed with both
+Max and Priority requested and echoed `service_tier: "priority"`. For
+`store: false`, the runner preserves and resends every response output item,
+including reasoning items, before adding function-call outputs.
 
 Retry only transient transport failures, HTTP 408/409/429, and HTTP 5xx within
 the profile retry/request ceilings. Other provider errors are typed failures.
@@ -158,7 +183,8 @@ The worker writes one bounded JSONL terminal record to stdout with schema
 
 - status and a secret-safe error classification/message when failed;
 - provider-profile ID and fingerprint, provider, requested and returned model,
-  reasoning effort, and dated rate-card identity;
+  reasoning effort, requested and returned service tiers, and dated rate-card
+  identity;
 - request/response IDs, request and retry counts, tool-call counts, and elapsed
   milliseconds;
 - accumulated input, cached-input, cache-write, output, and reasoning tokens;
@@ -189,8 +215,10 @@ must prove:
 5. the function-call loop preserves output items and applies a bounded write;
 6. transient failures retry within budget while permanent/malformed responses
    fail safely;
-7. usage accumulation and integer micro-USD calculation are exact;
-8. default registry availability reflects the owner profile binding without
+7. a returned tier that differs from the requested Fast tier remains an
+   explicit evidence limitation rather than being reported as Fast;
+8. usage accumulation and integer micro-USD calculation are exact;
+9. default registry availability reflects the owner profile binding without
    affecting Kode or Codex behavior.
 
 No paid request belongs in the test suite. The first paid call is a separately

@@ -47,6 +47,7 @@ export const providerProfileSchema = z
     baseUrl: z.string().url(),
     model: z.string().min(1),
     reasoningEffort: z.enum(["none", "low", "medium", "high", "xhigh", "max"]),
+    serviceTier: z.enum(["default", "priority", "fast"]).default("default"),
     apiKeyEnvName: environmentNameSchema,
     rateCard: providerRateCardSchema,
     budget: providerBudgetSchema,
