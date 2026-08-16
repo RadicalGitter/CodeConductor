@@ -71,8 +71,11 @@ can name that profile but cannot define or widen it.
 
 ## Discovery and watches
 
-- `scan_contract_sources` compiles without queue mutation.
-- `enqueue_contract_sources` compiles and enqueues one exact revision.
+- `scan_contract_sources` compiles without queue mutation. An optional exact
+  `contractIds` allowlist selects an independent subgraph and rejects unknown
+  ids or omitted dependencies.
+- `enqueue_contract_sources` compiles and enqueues one exact revision, applying
+  the same optional contract allowlist before queue mutation.
 - `register_contract_watch` persists a moving-ref scan policy.
 - the MCP process polls enabled watches automatically;
   `poll_contract_watches` triggers an immediate cycle.

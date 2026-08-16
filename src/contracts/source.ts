@@ -40,6 +40,13 @@ export const sourceScanRequestSchema = z.object({
   repositoryPath: z.string().min(1),
   baseRef: z.string().min(1).default("HEAD"),
   allowedAdapterIds: z.array(z.string().min(1)).min(1),
+  contractIds: z
+    .array(z.string().regex(/^[a-zA-Z0-9_.-]+$/))
+    .min(1)
+    .refine((entries) => new Set(entries).size === entries.length, {
+      message: "contractIds must not contain duplicates",
+    })
+    .optional(),
   includeExtensions: z
     .array(z.string().regex(/^\.[a-zA-Z0-9]+$/))
     .default([

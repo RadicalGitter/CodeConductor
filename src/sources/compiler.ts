@@ -90,11 +90,15 @@ export class ContractSourceCompiler {
     }
 
     validateGraph(contracts);
+    const selected = request.contractIds
+      ? selectContracts(contracts, request.contractIds)
+      : contracts;
+    validateGraph(selected);
     return {
       schema: "conductor.compiled-source-batch/v1",
       repositoryRoot: repository.root,
       revision: repository.revision,
-      contracts: contracts.sort((left, right) =>
+      contracts: selected.sort((left, right) =>
         left.id.localeCompare(right.id),
       ),
     };
@@ -123,6 +127,20 @@ export class ContractSourceCompiler {
       idempotencyKey: `source_${compiled.fingerprint}`,
     };
   }
+}
+
+function selectContracts(
+  contracts: CompiledSourceContract[],
+  requestedIds: string[],
+): CompiledSourceContract[] {
+  const byId = new Map(contracts.map((contract) => [contract.id, contract]));
+  const missing = requestedIds.filter((id) => !byId.has(id));
+  if (missing.length > 0) {
+    throw new Error(
+      `Requested source contracts were not found: ${missing.join(", ")}`,
+    );
+  }
+  return requestedIds.map((id) => byId.get(id)!);
 }
 
 function extractContracts(

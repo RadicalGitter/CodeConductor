@@ -79,6 +79,28 @@ test("compiles tracked source comments into an idempotent dependency queue", asy
       line: 2,
     });
 
+    const selected = await sources.compile({
+      ...scan,
+      contractIds: ["combat.attack"],
+    });
+    expect(selected.contracts.map((contract) => contract.id)).toEqual([
+      "combat.attack",
+    ]);
+    await expect(
+      sources.compile({
+        ...scan,
+        contractIds: ["combat.damage"],
+      }),
+    ).rejects.toThrow("depends on missing combat.attack");
+    await expect(
+      sources.compile({
+        ...scan,
+        contractIds: ["combat.absent"],
+      }),
+    ).rejects.toThrow(
+      "Requested source contracts were not found: combat.absent",
+    );
+
     const run = await sources.compileAndEnqueue(scan);
     expect(run.enqueued).toHaveLength(2);
     expect(run.enqueued[1]!.dependsOnJobIds).toEqual([run.enqueued[0]!.jobId]);
@@ -96,6 +118,16 @@ test("compiles tracked source comments into an idempotent dependency queue", asy
 
     const replay = await sources.compileAndEnqueue(scan);
     expect(replay).toEqual(run);
+
+    const selectedRun = await sources.compileAndEnqueue({
+      ...scan,
+      contractIds: ["combat.attack"],
+    });
+    expect(selectedRun.enqueued).toHaveLength(1);
+    expect(selectedRun.enqueued[0]).toMatchObject({
+      contractId: "combat.attack",
+      idempotentReplay: true,
+    });
 
     await writeFile(
       sourcePath,
