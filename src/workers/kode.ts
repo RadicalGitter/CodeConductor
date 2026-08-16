@@ -171,12 +171,13 @@ function parseKodeAdapterOptions(
     let resolved: string;
     try {
       resolved = realpathSync.native(candidate);
-      if (!statSync(resolved).isDirectory()) {
-        throw new Error("not a directory");
+      const resolvedType = statSync(resolved);
+      if (!resolvedType.isDirectory() && !resolvedType.isFile()) {
+        throw new Error("not a file or directory");
       }
     } catch {
       throw new Error(
-        `Kode read-only path must identify an existing directory: ${candidate}`,
+        `Kode read-only path must identify an existing file or directory: ${candidate}`,
       );
     }
 
@@ -208,12 +209,12 @@ function kodePathRules(
   readOnlyPaths: readonly string[],
 ): string[] {
   return readOnlyPaths.flatMap((root) => {
-    const pattern = kodeAbsoluteDirectoryPattern(root);
+    const pattern = kodeAbsolutePathPattern(root);
     return tools.map((tool) => `${tool}(${pattern})`);
   });
 }
 
-function kodeAbsoluteDirectoryPattern(root: string): string {
+function kodeAbsolutePathPattern(root: string): string {
   const portable = root
     .replace(
       /^([A-Za-z]):[\\/]/,
@@ -221,7 +222,7 @@ function kodeAbsoluteDirectoryPattern(root: string): string {
     )
     .replaceAll("\\", "/")
     .replace(/\/+$/, "");
-  return `/${portable}/**`;
+  return statSync(root).isDirectory() ? `/${portable}/**` : `/${portable}`;
 }
 
 function appendReadOnlyRoots(

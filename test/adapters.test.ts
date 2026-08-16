@@ -1,5 +1,11 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -104,6 +110,8 @@ test("Kode grants scoped reads and denies writes for declared external evidence 
     path.join(os.tmpdir(), "conductor-kode-evidence-"),
   );
   try {
+    const evidenceFile = path.join(evidenceRoot, "startup.vbs");
+    writeFileSync(evidenceFile, "fixture\n");
     const scoped = freezeJobRequest(
       {
         objective: "Review retained evidence",
@@ -111,7 +119,7 @@ test("Kode grants scoped reads and denies writes for declared external evidence 
         adapterId: "kode",
         adapterOptions: {
           model: "main",
-          readOnlyPaths: [evidenceRoot],
+          readOnlyPaths: [evidenceRoot, evidenceFile],
         },
       },
       { repositoryRoot: "Z:\\repo", baseRevision: "e".repeat(40) },
@@ -119,6 +127,7 @@ test("Kode grants scoped reads and denies writes for declared external evidence 
     const adapter = new KodeAdapter(process.execPath);
     const invocation = adapter.buildInvocation(scoped, "Z:\\workspace");
     const portableRoot = realpathForKodeRule(evidenceRoot);
+    const portableFile = realpathForKodeRule(evidenceFile);
     const allowedIndex = invocation.args.indexOf("--allowed-tools");
     const deniedIndex = invocation.args.indexOf("--disallowed-tools");
 
@@ -131,12 +140,14 @@ test("Kode grants scoped reads and denies writes for declared external evidence 
     expect(invocation.args).toContain(`Edit(${portableRoot})`);
     expect(invocation.args).toContain(`Write(${portableRoot})`);
     expect(invocation.args).toContain(`NotebookEdit(${portableRoot})`);
+    expect(invocation.args).toContain(`Read(${portableFile})`);
+    expect(invocation.args).toContain(`Write(${portableFile})`);
     expect(invocation.args).not.toContain("--add-dir");
     expect(invocation.args.at(-1)).toContain(evidenceRoot);
 
     const evidence = adapter.profileEvidence(scoped, invocation);
     expect(evidence.attributes.externalReadOnlyRoots).toBe(
-      JSON.stringify([path.resolve(evidenceRoot)]),
+      JSON.stringify([path.resolve(evidenceRoot), path.resolve(evidenceFile)]),
     );
   } finally {
     rmSync(evidenceRoot, { recursive: true, force: true });
@@ -176,7 +187,7 @@ test("Kode rejects malformed or widened adapter options", () => {
     );
     expect(() =>
       build({ readOnlyPaths: [path.join(evidenceRoot, "missing")] }),
-    ).toThrow("must identify an existing directory");
+    ).toThrow("must identify an existing file or directory");
     expect(() =>
       build({ readOnlyPaths: [evidenceRoot, path.resolve(evidenceRoot)] }),
     ).toThrow("Duplicate Kode read-only path");
@@ -194,7 +205,7 @@ function realpathForKodeRule(candidate: string): string {
     )
     .replaceAll("\\", "/")
     .replace(/\/+$/, "");
-  return `/${portable}/**`;
+  return statSync(candidate).isDirectory() ? `/${portable}/**` : `/${portable}`;
 }
 
 test("Codex stays in workspace-write and accepts only bounded adapter options", () => {

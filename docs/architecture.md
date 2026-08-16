@@ -139,7 +139,7 @@ must leave the captured proposal unchanged. Network, stronger secret isolation,
 resource limits, and host mounts belong to the VM executor, not `AGENTS.md`.
 
 When a Kode task needs retained evidence outside its isolated worktree, the
-source contract must name each existing absolute directory as an external
+source contract must name each existing absolute file or directory as an external
 read-only root. The adapter grants only path-scoped read tools and explicitly
 denies write tools beneath those roots; it never promotes them to additional
 working directories. Their canonical identities are sealed with the worker
