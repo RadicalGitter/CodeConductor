@@ -144,6 +144,9 @@ test("Kode grants scoped reads and denies writes for declared external evidence 
     expect(invocation.args).toContain(`Write(${portableFile})`);
     expect(invocation.args).not.toContain("--add-dir");
     expect(invocation.args.at(-1)).toContain(evidenceRoot);
+    expect(invocation.env?.KODE_READ_ONLY_ROOTS_JSON).toBe(
+      JSON.stringify([path.resolve(evidenceRoot), path.resolve(evidenceFile)]),
+    );
 
     const evidence = adapter.profileEvidence(scoped, invocation);
     expect(evidence.attributes.externalReadOnlyRoots).toBe(

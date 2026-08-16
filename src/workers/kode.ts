@@ -90,7 +90,14 @@ export class KodeAdapter implements WorkerAdapter {
         ),
       ],
       cwd: workspacePath,
-      env: selectRequestedEnvironment(this.environmentKeys),
+      env: {
+        ...selectRequestedEnvironment(this.environmentKeys),
+        ...(options.readOnlyPaths.length > 0
+          ? {
+              KODE_READ_ONLY_ROOTS_JSON: JSON.stringify(options.readOnlyPaths),
+            }
+          : {}),
+      },
     };
   }
 
