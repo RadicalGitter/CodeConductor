@@ -2,7 +2,7 @@ import type { JobContract } from "../contracts/job.js";
 import type { ProcessInvocation } from "../runtime/process-runner.js";
 import { selectRequestedEnvironment } from "../runtime/environment.js";
 import { resolveExecutablePath } from "../runtime/executable.js";
-import { statSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import {
   buildWorkerPrompt,
@@ -49,7 +49,8 @@ export class KodeAdapter implements WorkerAdapter {
     workspacePath: string,
     attemptContext?: WorkerAttemptContext,
   ): ProcessInvocation {
-    const model = contract.worker.options.model;
+    const options = parseKodeAdapterOptions(contract.worker.options);
+    const model = options.model;
     const tools = kodeToolsForContract(contract, workspacePath);
     if (!this.executable || !this.entryAvailable) {
       throw new Error(
@@ -71,11 +72,22 @@ export class KodeAdapter implements WorkerAdapter {
         "stream-json",
         "--tools",
         tools,
+        ...(options.readOnlyPaths.length > 0
+          ? [
+              "--allowed-tools",
+              ...kodeReadRules(options.readOnlyPaths),
+              "--disallowed-tools",
+              ...kodeWriteDenyRules(options.readOnlyPaths),
+            ]
+          : []),
         "--max-turns",
         String(this.maxTurns),
         ...(typeof model === "string" && model ? ["--model", model] : []),
         "--print",
-        buildWorkerPrompt(contract, attemptContext),
+        appendReadOnlyRoots(
+          buildWorkerPrompt(contract, attemptContext),
+          options.readOnlyPaths,
+        ),
       ],
       cwd: workspacePath,
       env: selectRequestedEnvironment(this.environmentKeys),
@@ -83,6 +95,7 @@ export class KodeAdapter implements WorkerAdapter {
   }
 
   profileEvidence(contract: JobContract, invocation: ProcessInvocation) {
+    const options = parseKodeAdapterOptions(contract.worker.options);
     const files: Array<{
       role: "harness" | "configuration";
       path: string;
@@ -103,11 +116,128 @@ export class KodeAdapter implements WorkerAdapter {
       files,
       attributes: {
         maxTurns: String(this.maxTurns),
-        modelSelector: String(contract.worker.options.model ?? ""),
+        modelSelector: String(options.model ?? ""),
+        externalReadOnlyRoots: JSON.stringify(options.readOnlyPaths),
       },
       unresolvedReasons,
     };
   }
+}
+
+interface KodeAdapterOptions {
+  readonly model?: string;
+  readonly readOnlyPaths: readonly string[];
+}
+
+function parseKodeAdapterOptions(
+  raw: Readonly<Record<string, unknown>>,
+): KodeAdapterOptions {
+  const unknown = Object.keys(raw).filter(
+    (key) => key !== "model" && key !== "readOnlyPaths",
+  );
+  if (unknown.length > 0) {
+    throw new Error(
+      `Unsupported Kode adapter option(s): ${unknown.sort().join(", ")}`,
+    );
+  }
+
+  const model = raw.model;
+  if (
+    model !== undefined &&
+    (typeof model !== "string" || model.trim() === "")
+  ) {
+    throw new Error("Kode adapter option model must be a non-empty string");
+  }
+
+  const requestedPaths = raw.readOnlyPaths ?? [];
+  if (!Array.isArray(requestedPaths)) {
+    throw new Error("Kode adapter option readOnlyPaths must be an array");
+  }
+
+  const readOnlyPaths: string[] = [];
+  const seen = new Set<string>();
+  for (const candidate of requestedPaths) {
+    if (typeof candidate !== "string" || candidate.trim() === "") {
+      throw new Error(
+        "Every Kode readOnlyPaths entry must be a non-empty string",
+      );
+    }
+    if (!path.isAbsolute(candidate) || isUncPath(candidate)) {
+      throw new Error(
+        `Kode read-only path must be an absolute local path: ${candidate}`,
+      );
+    }
+
+    let resolved: string;
+    try {
+      resolved = realpathSync.native(candidate);
+      if (!statSync(resolved).isDirectory()) {
+        throw new Error("not a directory");
+      }
+    } catch {
+      throw new Error(
+        `Kode read-only path must identify an existing directory: ${candidate}`,
+      );
+    }
+
+    const identity =
+      process.platform === "win32" ? resolved.toLowerCase() : resolved;
+    if (seen.has(identity)) {
+      throw new Error(`Duplicate Kode read-only path: ${candidate}`);
+    }
+    seen.add(identity);
+    readOnlyPaths.push(resolved);
+  }
+
+  return {
+    ...(typeof model === "string" ? { model } : {}),
+    readOnlyPaths,
+  };
+}
+
+function kodeReadRules(readOnlyPaths: readonly string[]): string[] {
+  return kodePathRules(["Read", "LS", "Glob", "Grep"], readOnlyPaths);
+}
+
+function kodeWriteDenyRules(readOnlyPaths: readonly string[]): string[] {
+  return kodePathRules(["Edit", "Write", "NotebookEdit"], readOnlyPaths);
+}
+
+function kodePathRules(
+  tools: readonly string[],
+  readOnlyPaths: readonly string[],
+): string[] {
+  return readOnlyPaths.flatMap((root) => {
+    const pattern = kodeAbsoluteDirectoryPattern(root);
+    return tools.map((tool) => `${tool}(${pattern})`);
+  });
+}
+
+function kodeAbsoluteDirectoryPattern(root: string): string {
+  const portable = root
+    .replace(
+      /^([A-Za-z]):[\\/]/,
+      (_match, drive: string) => `/${drive.toLowerCase()}/`,
+    )
+    .replaceAll("\\", "/")
+    .replace(/\/+$/, "");
+  return `/${portable}/**`;
+}
+
+function appendReadOnlyRoots(
+  prompt: string,
+  readOnlyPaths: readonly string[],
+): string {
+  if (readOnlyPaths.length === 0) return prompt;
+  return `${prompt}\n\nExternal read-only evidence roots:\n${readOnlyPaths
+    .map((root) => `- ${root}`)
+    .join(
+      "\n",
+    )}\nYou may inspect these roots with read-only tools. Writing anywhere beneath them is mechanically denied.`;
+}
+
+function isUncPath(candidate: string): boolean {
+  return candidate.startsWith("\\\\") || candidate.startsWith("//");
 }
 
 function kodeToolsForContract(

@@ -60,6 +60,16 @@ JSON file outside the project contract:
 }
 ```
 
+Kode source contracts may additionally declare `readOnlyPaths`, an array of
+existing absolute local directories that contain evidence required by the
+task. Conductor passes each directory to Kode as path-scoped `Read`, `LS`,
+`Glob`, and `Grep` permission rules and adds explicit `Edit`, `Write`, and
+`NotebookEdit` denials for the same paths. It does not use Kode's `--add-dir`
+facility, because that would make the directory an additional writable working
+directory under `acceptEdits`. The canonical resolved roots are recorded in the
+launch-time worker-profile evidence. Unknown Kode adapter options, relative or
+missing paths, UNC paths, and duplicate roots fail before worker launch.
+
 Resolved commands still pass the normal shell-free execution policy. Profile
 values are not persisted in the source-authored contract.
 

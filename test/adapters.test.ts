@@ -22,9 +22,23 @@ const contract = freezeJobRequest(
   },
 );
 
+const kodeContract = freezeJobRequest(
+  {
+    objective: "Make one bounded change",
+    repositoryPath: "Z:\\repo",
+    adapterId: "kode",
+    adapterOptions: { model: "test-model" },
+    idempotencyKey: "kode-adapter-snapshot",
+  },
+  {
+    repositoryRoot: "Z:\\repo",
+    baseRevision: "c".repeat(40),
+  },
+);
+
 test("Kode defaults to safe unattended edits without permission bypass", () => {
   const adapter = new KodeAdapter(process.execPath);
-  const invocation = adapter.buildInvocation(contract, "Z:\\workspace");
+  const invocation = adapter.buildInvocation(kodeContract, "Z:\\workspace");
   expect(adapter.description.hostExecution).toBe("file-edit-only");
   expect(invocation.executable).toBe(process.execPath);
   expect(invocation.args).toContain("--safe");
@@ -78,12 +92,110 @@ test("Kode can launch a compiled fork through an explicit interpreter and entry"
     new URL("./fixtures/mutate-worker.ts", import.meta.url),
   );
   const invocation = new KodeAdapter(process.execPath, entry).buildInvocation(
-    contract,
+    kodeContract,
     "Z:\\workspace",
   );
   expect(invocation.executable).toBe(process.execPath);
   expect(invocation.args[0]).toBe(entry);
 });
+
+test("Kode grants scoped reads and denies writes for declared external evidence roots", () => {
+  const evidenceRoot = mkdtempSync(
+    path.join(os.tmpdir(), "conductor-kode-evidence-"),
+  );
+  try {
+    const scoped = freezeJobRequest(
+      {
+        objective: "Review retained evidence",
+        repositoryPath: "Z:\\repo",
+        adapterId: "kode",
+        adapterOptions: {
+          model: "main",
+          readOnlyPaths: [evidenceRoot],
+        },
+      },
+      { repositoryRoot: "Z:\\repo", baseRevision: "e".repeat(40) },
+    );
+    const adapter = new KodeAdapter(process.execPath);
+    const invocation = adapter.buildInvocation(scoped, "Z:\\workspace");
+    const portableRoot = realpathForKodeRule(evidenceRoot);
+    const allowedIndex = invocation.args.indexOf("--allowed-tools");
+    const deniedIndex = invocation.args.indexOf("--disallowed-tools");
+
+    expect(allowedIndex).toBeGreaterThan(-1);
+    expect(deniedIndex).toBeGreaterThan(allowedIndex);
+    expect(invocation.args).toContain(`Read(${portableRoot})`);
+    expect(invocation.args).toContain(`LS(${portableRoot})`);
+    expect(invocation.args).toContain(`Glob(${portableRoot})`);
+    expect(invocation.args).toContain(`Grep(${portableRoot})`);
+    expect(invocation.args).toContain(`Edit(${portableRoot})`);
+    expect(invocation.args).toContain(`Write(${portableRoot})`);
+    expect(invocation.args).toContain(`NotebookEdit(${portableRoot})`);
+    expect(invocation.args).not.toContain("--add-dir");
+    expect(invocation.args.at(-1)).toContain(evidenceRoot);
+
+    const evidence = adapter.profileEvidence(scoped, invocation);
+    expect(evidence.attributes.externalReadOnlyRoots).toBe(
+      JSON.stringify([path.resolve(evidenceRoot)]),
+    );
+  } finally {
+    rmSync(evidenceRoot, { recursive: true, force: true });
+  }
+});
+
+test("Kode rejects malformed or widened adapter options", () => {
+  const evidenceRoot = mkdtempSync(
+    path.join(os.tmpdir(), "conductor-kode-invalid-evidence-"),
+  );
+  try {
+    const build = (adapterOptions: Record<string, unknown>) =>
+      new KodeAdapter(process.execPath).buildInvocation(
+        freezeJobRequest(
+          {
+            objective: "Review retained evidence",
+            repositoryPath: "Z:\\repo",
+            adapterId: "kode",
+            adapterOptions,
+          },
+          { repositoryRoot: "Z:\\repo", baseRevision: "f".repeat(40) },
+        ),
+        "Z:\\workspace",
+      );
+
+    expect(() => build({ model: "main", profile: "unexpected" })).toThrow(
+      "Unsupported Kode adapter option(s): profile",
+    );
+    expect(() => build({ model: "" })).toThrow(
+      "model must be a non-empty string",
+    );
+    expect(() => build({ readOnlyPaths: "not-an-array" })).toThrow(
+      "readOnlyPaths must be an array",
+    );
+    expect(() => build({ readOnlyPaths: ["relative"] })).toThrow(
+      "must be an absolute local path",
+    );
+    expect(() =>
+      build({ readOnlyPaths: [path.join(evidenceRoot, "missing")] }),
+    ).toThrow("must identify an existing directory");
+    expect(() =>
+      build({ readOnlyPaths: [evidenceRoot, path.resolve(evidenceRoot)] }),
+    ).toThrow("Duplicate Kode read-only path");
+  } finally {
+    rmSync(evidenceRoot, { recursive: true, force: true });
+  }
+});
+
+function realpathForKodeRule(candidate: string): string {
+  const portable = path
+    .resolve(candidate)
+    .replace(
+      /^([A-Za-z]):[\\/]/,
+      (_match, drive: string) => `/${drive.toLowerCase()}/`,
+    )
+    .replaceAll("\\", "/")
+    .replace(/\/+$/, "");
+  return `/${portable}/**`;
+}
 
 test("Codex stays in workspace-write and accepts only bounded adapter options", () => {
   const adapter = new CodexAdapter(process.execPath);

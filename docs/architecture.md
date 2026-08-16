@@ -138,6 +138,14 @@ and produce separate logs. Setup must leave repository state clean; acceptance
 must leave the captured proposal unchanged. Network, stronger secret isolation,
 resource limits, and host mounts belong to the VM executor, not `AGENTS.md`.
 
+When a Kode task needs retained evidence outside its isolated worktree, the
+source contract must name each existing absolute directory as an external
+read-only root. The adapter grants only path-scoped read tools and explicitly
+denies write tools beneath those roots; it never promotes them to additional
+working directories. Their canonical identities are sealed with the worker
+profile so a reviewer can distinguish otherwise identical attempts with
+different evidence visibility.
+
 On the supported Windows lane, every setup, worker, acceptance, external-
 cleanup, and bounded Git-cleanup subprocess runs below a PowerShell 7 Job host.
 The host creates a Windows Job Object with kill-on-close, assigns the guardian
