@@ -12,8 +12,10 @@ Conductor's architectural or licensing base.
 
 1. This file.
 2. `docs/architecture.md` for authority and runtime ownership.
-3. `docs/parity-map.md` when changing an existing external contract.
-4. `docs/roadmap.md` for sequence and deliberate deferrals.
+3. `docs/spec-contract-intake.md` when creating watched contracts from product
+   specifications.
+4. `docs/parity-map.md` when changing an existing external contract.
+5. `docs/roadmap.md` for sequence and deliberate deferrals.
 
 ## Building through Conductor
 
@@ -22,6 +24,19 @@ backend design should become a multi-contract work package, when running or
 reviewing a source-authored contract graph, or when turning a reproducible
 defect into an isolated fix proposal. Keep the procedure in the skill rather
 than expanding this always-loaded file.
+
+The standard specification intake has two package scripts:
+
+- `bun run contract:builder` for an incomplete product specification;
+- `bun run contract:from-spec -- --spec <path>` for a `conductor-ready`
+  specification.
+
+Run the latter as a background process, read output only until its start record
+identifies the job, and do not create a persistent goal or poll for completion.
+Its process-backed watcher seals review evidence and wakes the originating DSH
+session. Submit review corrections through the same command with `--parent-job`
+and one `--finding` per independent issue. `docs/spec-contract-intake.md` owns
+the complete command, profile, review, and failure contract.
 
 For the first Vesserin product package, also read
 `docs/vesserin-backend-generation-plan.md`. The plan is cross-project direction,
