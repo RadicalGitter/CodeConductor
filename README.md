@@ -129,6 +129,7 @@ Runtime data defaults to `~/.conductor`. Common owner-side configuration:
 | `CONDUCTOR_POLL_INTERVAL_MS`      | Queue polling interval                                 |
 | `CONDUCTOR_LEASE_MS`              | Single-host dispatcher lease duration                  |
 | `CONDUCTOR_WORKER_ENV_ALLOWLIST`  | Environment names workers may inherit                  |
+| `KODE_AUTOCOMPACT_PCT_OVERRIDE`   | Kode prompt percentage that triggers compaction        |
 | `CONDUCTOR_COMMAND_ALLOWLIST`     | Absolute executables allowed for owner-authored checks |
 | `CONDUCTOR_COMMAND_ENV_ALLOWLIST` | Environment names checks may inherit                   |
 | `CONDUCTOR_RESOURCE_PROFILE_FILE` | Owner limits and retention policy frozen into new jobs |
@@ -163,6 +164,7 @@ gates are in the
 - [Resource budgets and retention](docs/resource-budgets-and-retention.md)
 - [Verification model](docs/verification.md)
 - [Source-authored contracts](docs/source-contracts.md)
+- [Specification contract intake](docs/spec-contract-intake.md)
 - [Behavior parity map](docs/parity-map.md)
 - [Roadmap](docs/roadmap.md)
 - [Unattended hardening register](docs/hardening-register.md)

@@ -48,6 +48,7 @@ try {
   const served = modelPayload.data?.[0];
   if (!served?.id)
     throw new Error("Model endpoint returned no served model id");
+  const contextTokens = served.meta?.n_ctx ?? 262_144;
 
   await mkdir(repository, { recursive: true });
   await mkdir(path.join(repository, "gameplay"), { recursive: true });
@@ -152,8 +153,8 @@ try {
     modelName: served.id,
     baseURL: endpoint,
     apiKey: "local-no-secret",
-    maxTokens: 8_192,
-    contextLength: served.meta?.n_ctx ?? 65_536,
+    maxTokens: contextTokens,
+    contextLength: contextTokens,
     reasoningEffort: "high",
     isActive: true,
     createdAt: Date.now(),
@@ -244,7 +245,7 @@ try {
         schema: "conductor.live-kode-canary/v2",
         endpoint,
         model: served.id,
-        contextTokens: served.meta?.n_ctx ?? null,
+        contextTokens,
         watchId: watched.watchId,
         sourceRunId: watched.lastRunId ?? null,
         sourceRevision: watched.lastRevision ?? null,

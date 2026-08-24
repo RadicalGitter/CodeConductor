@@ -10,6 +10,7 @@ const outputDirectory = path.resolve(
 );
 const target = path.join(outputDirectory, "config.json");
 const force = process.argv.includes("--force");
+const fallbackContextTokens = 262_144;
 
 if (!force && (await exists(target))) {
   throw new Error(`${target} already exists; pass --force to replace it`);
@@ -24,6 +25,7 @@ const payload = (await response.json()) as {
 };
 const served = payload.data?.[0];
 if (!served?.id) throw new Error("Model endpoint returned no served model id");
+const contextTokens = served.meta?.n_ctx ?? fallbackContextTokens;
 
 const profile = {
   name: "Conductor Local Worker",
@@ -31,8 +33,8 @@ const profile = {
   modelName: served.id,
   baseURL: endpoint,
   apiKey: "local-no-secret",
-  maxTokens: 8_192,
-  contextLength: served.meta?.n_ctx ?? 65_536,
+  maxTokens: contextTokens,
+  contextLength: contextTokens,
   reasoningEffort: "high",
   isActive: true,
   createdAt: Date.now(),
@@ -66,7 +68,8 @@ console.log(
       path: target,
       endpoint,
       model: served.id,
-      contextTokens: served.meta?.n_ctx ?? null,
+      contextTokens,
+      maxOutputTokens: contextTokens,
       thinkingMode: "enabled",
       reasoningEffort: "high",
     },

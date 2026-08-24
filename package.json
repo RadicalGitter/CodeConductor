@@ -10,6 +10,8 @@
   },
   "scripts": {
     "start:mcp": "bun src/cli.ts",
+    "contract:builder": "bun scripts/conductor-contract-builder.ts",
+    "contract:from-spec": "bun scripts/conductor-contract-from-spec.ts",
     "configure:kode-local": "bun scripts/configure-local-kode.ts",
     "doctor": "bun scripts/runtime-doctor.ts",
     "reconcile": "bun scripts/reconcile-runtime.ts",

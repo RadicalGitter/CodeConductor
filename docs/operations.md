@@ -69,10 +69,7 @@ It never merges into the project checkout.
    bun run configure:kode-local
    ```
 
-   The command discovers the exact served model from `/models`, enables
-   thinking with high reasoning effort, and refuses to overwrite an existing
-   profile unless `--force` is supplied. The profile uses a dummy local API key
-   and is separate from the user's interactive Kode configuration.
+   The command discovers the exact served model and context length from `/models`, enables thinking with high reasoning effort, sets Kode's required `maxTokens` field to that same full context length instead of imposing a separate response ceiling, and refuses to overwrite an existing profile unless `--force` is supplied. The profile uses a dummy local API key and is separate from the user's interactive Kode configuration. For a 262,144-token local context, set `KODE_AUTOCOMPACT_PCT_OVERRIDE=75` and include that name in `CONDUCTOR_WORKER_ENV_ALLOWLIST`; after Kode's built-in 20,000-token reserve, compaction then begins near 181,608 estimated prompt tokens while llama-server remains authoritative for the capacity available to reasoning and visible output.
 
 6. Prove the complete configuration before leaving it unattended:
 
