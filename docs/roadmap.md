@@ -11,7 +11,10 @@ product target—Vesserin Observation Projection v0—are defined in
 The immediate order is lifecycle fencing and recovery, process/resource
 closure, evidence sealing, coherent package handoff, safe control surfaces,
 the Vesserin adapter, then the product pilot. New feature slices do not outrank
-those gates.
+those gates. The phase-1 Queue/Settings console, notification-area tray, and
+exact model-service lifecycle foundation are implemented; its deliberately
+open follow-up work and operational failure symptoms are tracked under
+[Next improvement pass and residual risks](control-console.md#next-improvement-pass-and-residual-risks).
 
 The budgeted OpenAI Responses candidate adapter is implemented at `007cc7d`.
 Its strict owner profiles, protocol runner, adapter seam, offline oracles, and

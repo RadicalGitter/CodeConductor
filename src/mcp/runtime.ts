@@ -21,7 +21,20 @@ export function createConductorFromEnvironment(): Conductor {
   return createConductorRuntimeFromEnvironment().conductor;
 }
 
-export function createConductorRuntimeFromEnvironment(): {
+export interface ConductorRuntimeOptions {
+  maxConcurrent?: number;
+}
+
+export function resolveConductorDataRoot(): string {
+  return path.resolve(
+    process.env.CONDUCTOR_DATA_DIR ?? path.join(os.homedir(), ".conductor"),
+  );
+}
+
+export function createConductorRuntimeFromEnvironment(
+  options: ConductorRuntimeOptions = {},
+): {
+  dataRoot: string;
   conductor: Conductor;
   queue: QueueStore;
   dispatcher: DurableDispatcher;
@@ -30,9 +43,7 @@ export function createConductorRuntimeFromEnvironment(): {
   poller: ContractSourcePoller;
   reconciler: RuntimeReconciler;
 } {
-  const dataRoot = path.resolve(
-    process.env.CONDUCTOR_DATA_DIR ?? path.join(os.homedir(), ".conductor"),
-  );
+  const dataRoot = resolveConductorDataRoot();
   const store = new ArtifactStore(dataRoot);
   const profiles = CommandProfiles.fromEnvironment();
   const sandboxProfiles = SandboxProfiles.fromEnvironment();
@@ -49,7 +60,9 @@ export function createConductorRuntimeFromEnvironment(): {
   );
   const queue = new QueueStore(store);
   const dispatcher = new DurableDispatcher(conductor, queue, {
-    maxConcurrent: environmentInteger("CONDUCTOR_MAX_CONCURRENT", 1),
+    maxConcurrent:
+      options.maxConcurrent ??
+      environmentInteger("CONDUCTOR_MAX_CONCURRENT", 1),
     pollIntervalMs: environmentInteger("CONDUCTOR_POLL_INTERVAL_MS", 2_000),
     leaseMs: environmentInteger("CONDUCTOR_LEASE_MS", 30_000),
   });
@@ -70,6 +83,7 @@ export function createConductorRuntimeFromEnvironment(): {
     dispatcher.leaseMs,
   );
   return {
+    dataRoot,
     conductor,
     queue,
     dispatcher,

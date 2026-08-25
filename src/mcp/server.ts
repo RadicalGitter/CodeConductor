@@ -40,6 +40,7 @@ export function createMcpServer(
     dispatcher.queue,
     dispatcher.leaseMs,
   ),
+  runtimeProjection?: () => Promise<unknown>,
 ): McpServer {
   const server = new McpServer({
     name: "conductor",
@@ -72,6 +73,19 @@ export function createMcpServer(
     },
     async () => toolResult({ profile: conductor.resourceProfile }),
   );
+
+  if (runtimeProjection) {
+    server.registerTool(
+      "get_runtime_model_state",
+      {
+        title: "Get effective runtime and model state",
+        description:
+          "Read the compact owner-effective model identity, context, lifecycle state, resource policy, and settings provenance. Launch commands, process identifiers, credentials, and reasoning are omitted.",
+        annotations: { readOnlyHint: true, idempotentHint: true },
+      },
+      async () => toolResult({ projection: await runtimeProjection() }),
+    );
+  }
 
   server.registerTool(
     "reconcile_runtime",

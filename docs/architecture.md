@@ -67,7 +67,11 @@ to be `not-required` or `proven`.
 
 Only one dispatcher lease owns queue-to-process transitions. The compatibility
 submission tool and dependency-aware enqueue tool both use that dispatcher;
-there is no second MCP launch path. Independent jobs
+there is no second MCP launch path. The MCP owner may host the loopback control
+console with queue mutation authority. A standalone tray-console process is an
+observer/model-control host: it does not acquire the lease and disables
+Cancel/Retry rather than pretending it can signal another process's in-memory
+worker handle. Independent jobs
 may run up to the configured capacity; every mutation still receives its own
 worktree. Dependencies gate start, not acceptance: a dependency is satisfied
 only by a completed attempt with eligible deterministic evidence.

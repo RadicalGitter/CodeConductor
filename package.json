@@ -10,6 +10,8 @@
   },
   "scripts": {
     "start:mcp": "bun src/cli.ts",
+    "start:console": "bun src/cli.ts console",
+    "start:tray": "pwsh -STA -NoProfile -ExecutionPolicy Bypass -File scripts/conductor-tray.ps1",
     "contract:builder": "bun scripts/conductor-contract-builder.ts",
     "contract:from-spec": "bun scripts/conductor-contract-from-spec.ts",
     "configure:kode-local": "bun scripts/configure-local-kode.ts",
