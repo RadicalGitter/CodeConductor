@@ -1,5 +1,7 @@
 # Conductor working contract
 
+> This file is the agents' domain: written by agents, for agents. Keeping it accurate and current is the job of whichever agent works here; Oscar does not read or maintain it. Rules Oscar stated in it remain his decisions: record them faithfully and change them only when he does.
+
 ## Purpose
 
 Conductor is a provider-neutral outer orchestration runtime for bounded coding
